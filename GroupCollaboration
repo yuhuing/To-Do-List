@@ -1,0 +1,184 @@
+import 'package:cafe_checklist/AppDrawer.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+// ======= MODELS =======
+
+class GroupMember {
+  final String name;
+  final List<String> tasks;
+
+  GroupMember({required this.name}) : tasks = [];
+}
+
+// ======= PROVIDER =======
+
+class GroupCollaborationProvider extends ChangeNotifier {
+  List<GroupMember> _members = [];
+
+  List<GroupMember> get members => _members;
+
+  void addMember(String name) {
+    _members.add(GroupMember(name: name));
+    notifyListeners();
+  }
+
+  void removeMember(int index) {
+    _members.removeAt(index);
+    notifyListeners();
+  }
+
+  void addTask(int memberIndex, String task) {
+    _members[memberIndex].tasks.add(task);
+    notifyListeners();
+  }
+
+  void removeTask(int memberIndex, int taskIndex) {
+    _members[memberIndex].tasks.removeAt(taskIndex);
+    notifyListeners();
+  }
+}
+
+// ======= MAIN APP =======
+
+void main() {
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => GroupCollaborationProvider(),
+      child: MaterialApp(
+        home: GroupCollaborationPage(),
+        debugShowCheckedModeBanner: false,
+      ),
+    ),
+  );
+}
+
+// ======= GROUP COLLABORATION PAGE =======
+
+class GroupCollaborationPage extends StatelessWidget {
+  final TextEditingController _memberController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<GroupCollaborationProvider>(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Group Collaboration"),
+        backgroundColor: Colors.brown[400],
+      ),
+
+      //List Tile
+      drawer: const AppDrawer(),
+
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _memberController,
+                    decoration: InputDecoration(
+                      labelText: 'Enter member name',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_memberController.text.trim().isNotEmpty) {
+                      provider.addMember(_memberController.text.trim());
+                      _memberController.clear();
+                    }
+                  },
+                  child: Text("Add Member"),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: provider.members.length,
+              itemBuilder: (context, index) {
+                return MemberCard(index: index);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ======= MEMBER CARD =======
+
+class MemberCard extends StatefulWidget {
+  final int index;
+  const MemberCard({super.key, required this.index});
+
+  @override
+  State<MemberCard> createState() => _MemberCardState();
+}
+
+class _MemberCardState extends State<MemberCard> {
+  final TextEditingController _taskController = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = Provider.of<GroupCollaborationProvider>(context);
+    final member = provider.members[widget.index];
+
+    return Card(
+      elevation: 3,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: ExpansionTile(
+        title: Text(member.name, style: TextStyle(fontWeight: FontWeight.bold)),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _taskController,
+                    decoration: InputDecoration(
+                      labelText: 'New Task',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_taskController.text.trim().isNotEmpty) {
+                      provider.addTask(
+                        widget.index,
+                        _taskController.text.trim(),
+                      );
+                      _taskController.clear();
+                    }
+                  },
+                  child: Text("Add"),
+                ),
+              ],
+            ),
+          ),
+          ...member.tasks.asMap().entries.map((entry) {
+            final taskIndex = entry.key;
+            final task = entry.value;
+            return ListTile(
+              title: Text(task),
+              trailing: IconButton(
+                icon: Icon(Icons.delete, color: Colors.red),
+                onPressed: () => provider.removeTask(widget.index, taskIndex),
+              ),
+            );
+          }).toList(),
+        ],
+      ),
+    );
+  }
+}
