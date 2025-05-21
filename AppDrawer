@@ -1,0 +1,81 @@
+import 'package:flutter/material.dart';
+
+class AppDrawer extends StatelessWidget {
+  const AppDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        children: [
+          DrawerHeader(
+            decoration: BoxDecoration(color: Colors.brown),
+            child: Text(
+              'Menu',
+              style: TextStyle(color: Colors.white, fontSize: 24),
+            ),
+          ),
+
+          //Today's Tasks
+          ListTile(
+            leading: Icon(Icons.today),
+            title: Text('Today\'s Tasks'),
+            // onTap: () {
+            //   Navigator.pushReplacement(
+            //     context,
+            //     MaterialPageRoute(
+            //       builder: (_) => TodayTask(username: 'TestUser'),
+            //     ),
+            //   );
+            // },
+          ),
+
+          // Long-Term Task
+          ListTile(
+            leading: Icon(Icons.flag),
+            title: Text("Long-Term Task"),
+            // onTap: () {
+            //   Navigator.pushReplacement(
+            //     context,
+            //     MaterialPageRoute(builder: (_) => LongTerm()),
+            //   );
+            // },
+          ),
+
+          //Calendar
+          ListTile(
+            leading: Icon(Icons.calendar_month),
+            title: Text('Calendar'),
+            // onTap: () {
+            //   Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => Calendar()));
+            // }
+          ),
+
+          //Group
+          ListTile(
+            leading: Icon(Icons.group),
+            title: Text('Group Tasks'),
+            // onTap: () {
+            //   Navigator.pushReplacement(
+            //     context,
+            //     MaterialPageRoute(builder: (_) => GroupCollab()),
+            //   );
+            // },
+          ),
+
+          //Personal Profile
+          ListTile(
+            leading: Icon(Icons.person),
+            title: Text('My Profile'),
+            // onTap: () {
+            //   Navigator.pushReplacement(
+            //     context,
+            //     MaterialPageRoute(builder: (_) => Profile()),
+            //   );
+            // },
+          ),
+        ],
+      ),
+    );
+  }
+}
