@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:myapp/ToDoList/TodayTask.dart';
-import 'Calendar.dart';
-import 'GroupCollaborationPage.dart';
-import 'PersonalProfile.dart';
-import 'GlobalState.dart';
+import 'package:myapp/screens/TodayTask.dart';
+import 'package:myapp/screens/LongTerm.dart';
+import 'package:myapp/screens/Calendar.dart';
+import 'package:myapp/screens/GroupCollaborationPage.dart';
+import 'package:myapp/screens/PersonalProfile.dart';
+import '../screens/GlobalState.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -40,8 +41,14 @@ class AppDrawer extends StatelessWidget {
             title: const Text("Long-Term Task"),
             onTap: () {
               Navigator.pop(context); // Close drawer first
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Long-Term Task page not implemented yet')),
+              // ScaffoldMessenger.of(context).showSnackBar(
+              //   const SnackBar(content: Text('Long-Term Task page not implemented yet')),
+              // );
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => LongTermTask(),
+                ),
               );
             },
           ),
@@ -78,9 +85,7 @@ class AppDrawer extends StatelessWidget {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PersonalProfile(
-                    username: GlobalState.username,
-                  ),
+                  builder: (_) => PersonalProfile(),
                 ),
               );
             },
