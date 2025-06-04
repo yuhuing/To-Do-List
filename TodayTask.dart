@@ -134,7 +134,7 @@ class _TodayTaskState extends State<TodayTask> {
 
   void _addTask(String title, String details) {
     setState(() {
-      todayTasks.add(Task(title: title, details: details, isDone: false));
+      todayTasks.add(Task(title: title, details: details, dueDate: DateTime.now(), isDone: false));
     });
   }
 
@@ -276,29 +276,37 @@ class _TodayTaskState extends State<TodayTask> {
         .format(DateTime.now().toUtc().add(const Duration(hours: 8)));
 
     return Scaffold(
+
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.brown, size: 32),
+      ),
+
       drawer: const AppDrawer(),
 
       body: Stack(
       children: [
         // *** 放大后的 Menu 按钮
-        SafeArea(
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: Builder(
-              builder: (context) => Container(
-                margin: const EdgeInsets.only(left: 12, top: 8),
-                child: IconButton(
-                  icon: const Icon(Icons.menu),
-                  color: Colors.brown,
-                  iconSize: 36, // 🔸加大
-                  onPressed: () {
-                    Scaffold.of(context).openDrawer();
-                  },
-                ),
-              ),
-            ),
-          ),
-        ),
+        
+        // SafeArea(
+        //   child: Align(
+        //     alignment: Alignment.topLeft,
+        //     child: Builder(
+        //       builder: (context) => Container(
+        //         margin: const EdgeInsets.only(left: 12, top: 8),
+        //         child: IconButton(
+        //           icon: const Icon(Icons.menu),
+        //           color: Colors.brown,
+        //           iconSize: 36,
+        //           onPressed: () {
+        //             Scaffold.of(context).openDrawer();
+        //           },
+        //         ),
+        //       ),
+        //     ),
+        //   ),
+        // ),
 
         Padding(
           padding: const EdgeInsets.all(16.0),
