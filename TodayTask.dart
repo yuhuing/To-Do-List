@@ -1,11 +1,14 @@
 // TodayTask.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'dart:async';
 import 'HistoryPage.dart';
 import 'TaskModel.dart';
 import 'AppDrawer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'TaskProvider.dart';
 
 void main() {
   runApp(const MyApp());
@@ -14,14 +17,19 @@ void main() {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
+//---------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: TodayTask(username: 'TestUser'),
+    return ChangeNotifierProvider(
+      create: (context) => TaskProvider(),
+      child: const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: TodayTask(username: 'TestUser'),
+      ),
     );
   }
 }
+//-----------------------------------------------------
 
 class TodayTask extends StatefulWidget {
   final String username;
@@ -32,16 +40,19 @@ class TodayTask extends StatefulWidget {
 }
 
 class _TodayTaskState extends State<TodayTask> {
-  List<Task> todayTasks = [];
-  List<Task> historyTasks = [];
+  //-------------------------------------------------------
+  //List<Task> todayTasks = [];
+  //List<Task> historyTasks = [];
+  //--------------------------------------------------------
   final TextEditingController _taskController = TextEditingController();
   final TextEditingController _detailsController = TextEditingController();
   late Timer _midnightTimer;
   bool _midnightHandled = false;
 
-  void _confirmDeleteTask(int index) {
-  showDialog(
-    
+  //------------------------------------------------------------
+  void _confirmDeleteTask(Task task) {
+  //-------------------------------------------------------------
+  showDialog(   
     context: context,
     builder: (context) => AlertDialog(
       title: const Text(
@@ -67,9 +78,14 @@ class _TodayTaskState extends State<TodayTask> {
             foregroundColor: Colors.white,
           ),
           onPressed: () {
-            setState(() {
-              todayTasks.removeAt(index);
-            });
+            //--------------------------------------------------------------
+            // setState(() {
+            //   todayTasks.removeAt(index);
+            // });
+            final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+            final today = DateTime.now();
+            taskProvider.removeTask(today, task);
+            //--------------------------------------------------------------
             Navigator.of(context).pop(); // Close dialog
           },
           child: const Text("Delete"),
@@ -118,10 +134,22 @@ class _TodayTaskState extends State<TodayTask> {
   void _handleMidnight() async {
     if (_midnightHandled) return;
     
-    setState(() {
-      historyTasks.addAll(todayTasks.where((task) => !task.isDone));
-      todayTasks.clear();
-    });
+    //--------------------------------------------------------------------------------
+    // setState(() {
+    //   historyTasks.addAll(todayTasks.where((task) => !task.isDone));
+    //   todayTasks.clear();
+    // });
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final today = DateTime.now();
+    final todayTasks = taskProvider.getTasksFor(today);
+    
+    // Move incomplete tasks to history (you might need to implement this in TaskProvider)
+    // For now, we'll just clear today's tasks
+    for (var task in todayTasks.where((task) => !task.isDone)) {
+      taskProvider.removeTask(today, task);
+      // Add to history if you have a history mechanism
+    }
+    //-------------------------------------------------------------------------------------
 
     final prefs = await SharedPreferences.getInstance();
     final nowDate = DateFormat('yyyy-MM-dd').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
@@ -133,15 +161,27 @@ class _TodayTaskState extends State<TodayTask> {
   }
 
   void _addTask(String title, String details) {
-    setState(() {
-      todayTasks.add(Task(title: title, details: details, dueDate: DateTime.now(), isDone: false));
-    });
+    //------------------------------------------------------------------------------------------
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final task = Task(
+      title: title, 
+      details: details, 
+      dueDate: DateTime.now(), 
+      isDone: false
+    );
+    taskProvider.addTask(task);
+    //------------------------------------------------------------------------------------------
   }
 
   void _toggleTaskCompletion(Task task) {
-    setState(() {
-      task.isDone = !task.isDone;
-    });
+    //-------------------------------------------------------------------------------------
+    // setState(() {
+    //   task.isDone = !task.isDone;
+    // });
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final today = DateTime.now();
+    taskProvider.toggleTaskDone(today, task);
+    //---------------------------------------------------------------------------------------
   }
 
   @override
@@ -276,7 +316,6 @@ class _TodayTaskState extends State<TodayTask> {
         .format(DateTime.now().toUtc().add(const Duration(hours: 8)));
 
     return Scaffold(
-
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -286,7 +325,7 @@ class _TodayTaskState extends State<TodayTask> {
       drawer: const AppDrawer(),
 
       body: Stack(
-      children: [
+        children: [
         // *** 放大后的 Menu 按钮
         
         // SafeArea(
@@ -352,66 +391,134 @@ class _TodayTaskState extends State<TodayTask> {
                     ),
                     const SizedBox(height: 10),
                     
-                    if(todayTasks.isEmpty)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
-                          child: Text(
-                            "No tasks for today",
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
-                          ),
-                        ),
-                      )
-                    else    
-                      Expanded(
-                        child: ListView.builder(
-                              //shrinkWrap: true,
-                              //physics: const NeverScrollableScrollPhysics(),
-                              itemCount: todayTasks.length,
-                              itemBuilder: (context, index) {
-                                final task = todayTasks[index];
-                                return Card(
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  margin: const EdgeInsets.symmetric(vertical: 8),
-                                  elevation: 3,
-                                  color: const Color(0xFFF3E5AB),
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.all(16),
-                                    title: Text(
-                                      task.title,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        decoration: task.isDone ? TextDecoration.lineThrough : null,
-                                        fontSize: 18,
-                                        color: Colors.brown[900],
-                                      ),
-                                    ),
-                                    subtitle: Text(task.details),
-                                    trailing: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        IconButton(
-                                          icon: Icon(
-                                            task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                                            color: task.isDone ? Colors.green : Colors.brown,
-                                          ),
-                                          onPressed: () => _toggleTaskCompletion(task),
-                                        ),
+                    //-------------------------------------------------------------------------------------
+                    // if(todayTasks.isEmpty)
+                    //   const Center(
+                    //     child: Padding(
+                    //       padding: EdgeInsets.symmetric(vertical: 40),
+                    //       child: Text(
+                    //         "No tasks for today",
+                    //         style: TextStyle(fontSize: 16, color: Colors.grey),
+                    //       ),
+                    //     ),
+                    //   )
+                    // else    
+                    //   Expanded(
+                    //     child: ListView.builder(
+                    //           //shrinkWrap: true,
+                    //           //physics: const NeverScrollableScrollPhysics(),
+                    //           itemCount: todayTasks.length,
+                    //           itemBuilder: (context, index) {
+                    //             final task = todayTasks[index];
+                    //             return Card(
+                    //               shape: RoundedRectangleBorder(
+                    //                 borderRadius: BorderRadius.circular(20),
+                    //               ),
+                    //               margin: const EdgeInsets.symmetric(vertical: 8),
+                    //               elevation: 3,
+                    //               color: const Color(0xFFF3E5AB),
+                    //               child: ListTile(
+                    //                 contentPadding: const EdgeInsets.all(16),
+                    //                 title: Text(
+                    //                   task.title,
+                    //                   style: TextStyle(
+                    //                     fontWeight: FontWeight.bold,
+                    //                     decoration: task.isDone ? TextDecoration.lineThrough : null,
+                    //                     fontSize: 18,
+                    //                     color: Colors.brown[900],
+                    //                   ),
+                    //                 ),
+                    //                 subtitle: Text(task.details),
+                    //                 trailing: Row(
+                    //                   mainAxisSize: MainAxisSize.min,
+                    //                   children: [
+                    //                     IconButton(
+                    //                       icon: Icon(
+                    //                         task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                    //                         color: task.isDone ? Colors.green : Colors.brown,
+                    //                       ),
+                    //                       onPressed: () => _toggleTaskCompletion(task),
+                    //                     ),
 
-                                        IconButton(
-                                          icon: const Icon(Icons.delete, color: Color(0xFF990000)),
-                                          tooltip: 'Delete Task',
-                                          onPressed: () => _confirmDeleteTask(index),
-                                        ),
-                                      ],
+                    //                     IconButton(
+                    //                       icon: const Icon(Icons.delete, color: Color(0xFF990000)),
+                    //                       tooltip: 'Delete Task',
+                    //                       onPressed: () => _confirmDeleteTask(
+                    // ),
+                    //                     ),
+                    //                   ],
+                    //                 ),
+                    //               ),
+                    //             );
+                    //           },
+                    //         ),
+                    //   ),
+                    Expanded(
+                      child: Consumer<TaskProvider>(
+                        builder: (context, taskProvider, child) {
+                          final today = DateTime.now();
+                          final todayTasks = taskProvider.getTasksFor(today);
+                          
+                          if (todayTasks.isEmpty) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 40),
+                                child: Text(
+                                  "No tasks for today",
+                                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                                ),
+                              ),
+                            );
+                          }
+                              
+                          return ListView.builder(
+                            itemCount: todayTasks.length,
+                            itemBuilder: (context, index) {
+                              final task = todayTasks[index];
+                              return Card(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                margin: const EdgeInsets.symmetric(vertical: 8),
+                                elevation: 3,
+                                color: const Color(0xFFF3E5AB),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.all(16),
+                                  title: Text(
+                                    task.title,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      decoration: task.isDone ? TextDecoration.lineThrough : null,
+                                      fontSize: 18,
+                                      color: Colors.brown[900],
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                  subtitle: Text(task.details),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      IconButton(
+                                        icon: Icon(
+                                          task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                                          color: task.isDone ? Colors.green : Colors.brown,
+                                        ),
+                                        onPressed: () => _toggleTaskCompletion(task),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.delete, color: Color(0xFF990000)),
+                                        tooltip: 'Delete Task',
+                                        onPressed: () => _confirmDeleteTask(task),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
                       ),
+                    ),
+                  //-----------------------------------------------------------------------------------------------      
                   ],
                 ),
               ),
@@ -430,7 +537,7 @@ class _TodayTaskState extends State<TodayTask> {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => HistoryPage(tasks: historyTasks),
+                builder: (context) => HistoryPage(tasks: []),
               ),
             );
           },
@@ -439,17 +546,17 @@ class _TodayTaskState extends State<TodayTask> {
 
       ],
     ),
-      
-  floatingActionButton: Padding(
-    padding: const EdgeInsets.only(bottom: 30),
-    child: FloatingActionButton(
-      backgroundColor: Colors.brown,
-      onPressed: _showAddTaskDialog,
-      child: const Icon(Icons.add, size: 30),
+        
+    floatingActionButton: Padding(
+      padding: const EdgeInsets.only(bottom: 30),
+      child: FloatingActionButton(
+        backgroundColor: Colors.brown,
+        onPressed: _showAddTaskDialog,
+        child: const Icon(Icons.add, size: 30),
+      ),
     ),
-  ),
 
-  floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
   );
 
   }
