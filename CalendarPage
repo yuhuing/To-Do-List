@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'AppDrawer.dart';
+import 'TaskProvider.dart'; // 👈 import your provider
 
 void main() {
-  runApp(MyApp());
+  runApp(
+    ChangeNotifierProvider(create: (context) => TaskProvider(), child: MyApp()),
+  );
 }
 
 // Main App Widget
@@ -12,6 +17,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Calendar App',
       theme: ThemeData(primarySwatch: Colors.blue),
+      debugShowCheckedModeBanner: false,
       home: CalendarPage(), // ✅ <- Your calendar screen here
     );
   }
@@ -28,27 +34,8 @@ DateTime _stripTime(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
 
 // State Class for CalendarPage
 class _CalendarPageState extends State<CalendarPage> {
-  DateTime _focusedDay = DateTime(
-    2025,
-    3,
-    1,
-  ); // which month is shown on calendar
+  DateTime _focusedDay = DateTime.now(); // ✅ Always shows current month/day
   DateTime? _selectedDay; // the day user taps on
-
-  // Task and completion date
-  final Map<DateTime, List<String>> _tasks = {
-    _stripTime(DateTime(2025, 3, 4)): ['Task 1', 'Task 2', 'Task 3'],
-    _stripTime(DateTime(2025, 3, 5)): ['Task 1', 'Task 2', 'Task 3'],
-    _stripTime(DateTime(2025, 3, 7)): ['Task 1'],
-    _stripTime(DateTime(2025, 3, 14)): ['Task 1', 'Task 2', 'Task 3'],
-    _stripTime(DateTime(2025, 3, 27)): ['Task 1'],
-  };
-
-  final Set<DateTime> _completedDays = {
-    _stripTime(DateTime(2025, 3, 4)),
-    _stripTime(DateTime(2025, 3, 5)),
-    _stripTime(DateTime(2025, 3, 14)),
-  };
 
   // Build method (UI layout)
   @override
@@ -58,6 +45,10 @@ class _CalendarPageState extends State<CalendarPage> {
         title: const Text('Task Calendar'),
         backgroundColor: const Color(0xFF6F4E37),
       ),
+
+      //List Tile
+      drawer: const AppDrawer(),
+      
       body: Column(
         children: [
           // calendar widget
@@ -67,6 +58,19 @@ class _CalendarPageState extends State<CalendarPage> {
             focusedDay:
                 _focusedDay, // the month that shown on the screen that mentioned before
             calendarFormat: CalendarFormat.month,
+            availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+            calendarStyle: CalendarStyle(
+              todayDecoration: BoxDecoration(
+                color: Colors.orangeAccent,
+                shape: BoxShape.circle,
+              ),
+              selectedDecoration: BoxDecoration(
+                color: Colors.brown,
+                shape: BoxShape.circle,
+              ),
+              markerDecoration: BoxDecoration(shape: BoxShape.circle),
+              weekendTextStyle: TextStyle(color: Colors.grey.shade700),
+            ),
             selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
 
             // 1. Updates _delectedday and _focusedDay
@@ -79,7 +83,10 @@ class _CalendarPageState extends State<CalendarPage> {
                 _focusedDay = focused;
               });
 
-              if (_tasks.containsKey(normalized)) {
+              if (Provider.of<TaskProvider>(
+                context,
+                listen: false,
+              ).getTasksFor(normalized).isNotEmpty) {
                 showModalBottomSheet(
                   context: context,
                   shape: RoundedRectangleBorder(
@@ -96,53 +103,41 @@ class _CalendarPageState extends State<CalendarPage> {
             calendarBuilders: CalendarBuilders(
               markerBuilder: (context, date, events) {
                 final normalizedDate = _stripTime(date);
-                final tasks = _tasks[normalizedDate] ?? [];
+                final taskProvider = Provider.of<TaskProvider>(context);
+                final tasksForDate = taskProvider.getTasksFor(normalizedDate);
 
-                if (tasks.isEmpty) return const SizedBox.shrink();
+                if (tasksForDate.isEmpty) return const SizedBox.shrink();
 
                 final now = DateTime.now();
                 final daysLeft =
                     normalizedDate.difference(_stripTime(now)).inDays;
 
-                List<Widget> markers =
-                    tasks.map((task) {
-                      Color boxColor;
-
+                List<Color> colors =
+                    tasksForDate.map((task) {
                       if (daysLeft <= 3) {
-                        boxColor = Colors.red;
+                        return Colors.red;
                       } else if (daysLeft <= 7) {
-                        boxColor = Colors.yellow;
+                        return Colors.yellow;
                       } else {
-                        boxColor = Colors.green;
+                        return Colors.green;
                       }
-
-                      return Container(
-                        margin: const EdgeInsets.symmetric(vertical: 1),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 1,
-                        ),
-                        decoration: BoxDecoration(
-                          color: boxColor,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          task,
-                          style: const TextStyle(
-                            fontSize: 8,
-                            color: Colors.black,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
                     }).toList();
 
-                return Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(height: 20), // Push markers below the date
-                    ...markers.take(3), // Optional: limit to show max 3 tasks
-                  ],
+                return Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 2,
+                  children:
+                      colors.take(3).map((color) {
+                        return Container(
+                          width: 8,
+                          height: 8,
+                          margin: const EdgeInsets.symmetric(vertical: 1),
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                          ),
+                        );
+                      }).toList(),
                 );
               },
             ),
@@ -150,55 +145,55 @@ class _CalendarPageState extends State<CalendarPage> {
           const Spacer(),
         ],
       ),
-      bottomNavigationBar: Container(
-        height: 70,
-        decoration: const BoxDecoration(
-          color: Color(0xFFEADDC8), // Soft beige
-          borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            IconButton(
-              icon: const Icon(Icons.today),
-              onPressed: () {}, // Today’s Task
-            ),
-            IconButton(
-              icon: const Icon(Icons.access_time),
-              onPressed: () {}, // Long-term Tasks
-            ),
-            Container(
-              height: 60,
-              width: 60,
-              decoration: BoxDecoration(
-                color: Color(0xFF6F4E37), // Brown center button
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: const Icon(Icons.calendar_month, color: Colors.white),
-                onPressed: () {}, // Calendar
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.groups),
-              onPressed: () {}, // Group Collaboration
-            ),
-            IconButton(
-              icon: const Icon(Icons.person),
-              onPressed: () {}, // Profile
-            ),
-          ],
-        ),
-      ),
+      // bottomNavigationBar: Container(
+      //   height: 70,
+      //   decoration: const BoxDecoration(
+      //     color: Color(0xFFEADDC8), // Soft beige
+      //     borderRadius: BorderRadius.only(
+      //       topLeft: Radius.circular(20),
+      //       topRight: Radius.circular(20),
+      //     ),
+      //   ),
+      //   child: Row(
+      //     mainAxisAlignment: MainAxisAlignment.spaceAround,
+      //     children: [
+      //       IconButton(
+      //         icon: const Icon(Icons.today),
+      //         onPressed: () {}, // Today’s Task
+      //       ),
+      //       IconButton(
+      //         icon: const Icon(Icons.access_time),
+      //         onPressed: () {}, // Long-term Tasks
+      //       ),
+      //       Container(
+      //         height: 60,
+      //         width: 60,
+      //         decoration: BoxDecoration(
+      //           color: Color(0xFF6F4E37), // Brown center button
+      //           shape: BoxShape.circle,
+      //         ),
+      //         child: IconButton(
+      //           icon: const Icon(Icons.calendar_month, color: Colors.white),
+      //           onPressed: () {}, // Calendar
+      //         ),
+      //       ),
+      //       IconButton(
+      //         icon: const Icon(Icons.groups),
+      //         onPressed: () {}, // Group Collaboration
+      //       ),
+      //       IconButton(
+      //         icon: const Icon(Icons.person),
+      //         onPressed: () {}, // Profile
+      //       ),
+      //     ],
+      //   ),
+      // ),
     );
   }
 
   // Task List Modal Sheet
   Widget _buildTaskList(DateTime day) {
-    final tasks = _tasks[day] ?? [];
+    final tasks = Provider.of<TaskProvider>(context).getTasksFor(day);
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -214,7 +209,7 @@ class _CalendarPageState extends State<CalendarPage> {
             (task) => Card(
               color: Colors.green.shade100,
               child: ListTile(
-                title: Text(task),
+                title: Text(task.title),
                 trailing: const Icon(Icons.check_box_outline_blank),
                 subtitle: const Text('Details...'),
               ),
