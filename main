@@ -1,0 +1,35 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'ToDoList/AppDrawer.dart';
+import 'ToDoList/TodayTask.dart';
+import 'ToDoList/LongTerm.dart';
+import 'ToDoList/Calendar.dart';
+import 'ToDoList/PersonalProfile.dart';
+import 'ToDoList/TaskProvider.dart';
+
+void main() {
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => TaskProvider(),
+      child: MyApp(),
+    ),
+  );
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'To-Do List App',
+      debugShowCheckedModeBanner: false, 
+      home: TodayTask(username: 'User',), // or some home screen using AppDrawer
+      routes: {
+        '/today': (context) => TodayTask(username: 'User',),
+        '/longterm': (context) => LongTermTask(),
+        '/calendar': (context) => CalendarPage(),
+        '/profile': (context) => PersonalProfile(username: 'User'),
+        // Add others as needed
+      },
+    );
+  }
+}
