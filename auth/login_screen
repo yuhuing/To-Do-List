@@ -1,0 +1,200 @@
+import 'dart:developer';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:myapp/auth/auth_service.dart';
+import 'package:myapp/auth/signup_screen.dart';
+// import 'package:myapp/home_screen.dart';
+import 'package:myapp/widgets/button.dart';
+import 'package:myapp/widgets/textfield.dart';
+import 'package:flutter/material.dart';
+import 'package:myapp/screens/TodayTask.dart';
+// import 'package:cloud_firestore/cloud_firestore.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final _auth = AuthService();
+
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    super.dispose();
+    _email.dispose();
+    _password.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFF3D9),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 30),
+              child: Column(
+                children: [
+                  SizedBox(height: 50),
+                  const Center(
+                    child: Text(
+                      "Café Checklist",
+                      style: TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.brown,
+                      ),
+                    ),
+                  ),
+
+                  const Icon(
+                    Icons.coffee, // or use Image.asset()
+                    size: 60,
+                    color: Colors.brown,
+                  ),
+
+                  const SizedBox(height: 50),
+
+                  CustomTextField(
+                    hint: "Email",
+                    label: "Email",
+                    controller: _email,
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  CustomTextField(
+                    hint: "Password",
+                    label: "Password",
+                    isPassword: true,
+                    controller: _password,
+                  ),
+
+                  const SizedBox(height: 30),
+
+                  CustomButton(label: "Login", onPressed: _login),
+
+                  const SizedBox(height: 5),
+
+                  // *** notification: in login page, but dont have account, turn to signup page
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        "Do not have an account? ",
+                        style: TextStyle(color: Colors.brown),
+                      ),
+                      InkWell(
+                        onTap: () => goToSignup(context),
+                        child: const Text(
+                          "Signup",
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 30),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  goToSignup(BuildContext context) => Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const SignupScreen()),
+  );
+
+  // goToHome(BuildContext context) => Navigator.push(
+  //   context,
+  //   MaterialPageRoute(builder: (context) => const HomeScreen()),
+  // );
+
+  _login() async {
+    if (_email.text.isEmpty || _password.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please fill in all fields"),
+          backgroundColor: Color(0xFFB71C1C),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final user = await _auth.loginUserWithEmailAndPassword(
+        _email.text.trim(),
+        _password.text.trim(),
+      );
+
+      if (user != null) {
+        log("User Logged In");
+        
+        // // 🔥 新增：从 Firestore 获取用户名
+        // final uid = user.user!.uid;
+        // final doc = await FirebaseFirestore.instance
+        //     .collection('users')
+        //     .doc(uid)
+        //     .get();
+
+        // String username = '';
+        // if (doc.exists) {
+        //   username = doc['username'];
+        //   GlobalState.username = username; // 可选：储存给全局用
+        // }
+
+        // 登录成功，跳转到 TodayTask
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder:
+                (context) => TodayTask(),
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage;
+      switch (e.code) {
+        case 'user-not-found':
+          errorMessage = "This email is not registered.";
+          break;
+        case 'wrong-password':
+          errorMessage = "Incorrect password.";
+          break;
+        case 'invalid-email':
+          errorMessage = "Please enter a valid email address.";
+          break;
+        case 'user-disabled':
+          errorMessage = "This account has been disabled.";
+          break;
+        default:
+          errorMessage = e.message ?? "Login failed. Please try again.";
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMessage),
+          backgroundColor: Color(0xFFB71C1C),
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Something went wrong. Please try again."),
+          backgroundColor: Color(0xFFB71C1C),
+        ),
+      );
+    }
+  }
+}
