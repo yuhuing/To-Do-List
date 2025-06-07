@@ -1,0 +1,443 @@
+// TodayTask.dart
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import '../screens/TaskProvider.dart';
+import '../screens/HistoryPage.dart';
+import '../screens/TaskModel.dart';
+import '../widgets/AppDrawer.dart';
+
+void main() {
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (context) => TaskProvider(),
+      child: const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: TodayTask(),
+      ),
+    );
+  }
+}
+
+class TodayTask extends StatefulWidget {
+  const TodayTask({super.key});
+
+  @override
+  State<TodayTask> createState() => _TodayTaskState();
+}
+
+class _TodayTaskState extends State<TodayTask> {
+  final TextEditingController _taskController = TextEditingController();
+  final TextEditingController _detailsController = TextEditingController();
+  late Timer _midnightTimer;
+  bool _midnightHandled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeMidnightHandling();
+  }
+
+  @override
+  void dispose() {
+    _midnightTimer.cancel();
+    _taskController.dispose();
+    _detailsController.dispose();
+    super.dispose();
+  }
+
+  // Midnight handling methods
+  void _initializeMidnightHandling() {
+    _loadMidnightHandled().then((_) {
+      final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+      final todayMidnight = DateTime(now.year, now.month, now.day);
+      if (now.isAfter(todayMidnight) && !_midnightHandled) {
+        _handleMidnight();
+      }
+      _scheduleMidnightCheck();
+    });
+  }
+
+  void _scheduleMidnightCheck() {
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    final diff = nextMidnight.difference(now);
+    _midnightTimer = Timer(diff, _handleMidnight);
+  }
+
+  Future<void> _loadMidnightHandled() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastHandledDate = prefs.getString('lastHandledDate');
+    final nowDate = DateFormat('yyyy-MM-dd').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
+
+    if (lastHandledDate != nowDate) {
+      _midnightHandled = false;
+      await prefs.setString('lastHandledDate', nowDate);
+      await prefs.setBool('midnightHandled', false);
+    } else {
+      _midnightHandled = prefs.getBool('midnightHandled') ?? false;
+    }
+  }
+
+  void _handleMidnight() async {
+    if (_midnightHandled) return;
+
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final today = DateTime.now();
+    final todayTasks = taskProvider.getTasksFor(today);
+
+    for (var task in todayTasks.where((task) => !task.isDone)) {
+      taskProvider.removeTask(task);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final nowDate = DateFormat('yyyy-MM-dd').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
+    await prefs.setBool('midnightHandled', true);
+    await prefs.setString('lastHandledDate', nowDate);
+
+    _midnightHandled = true;
+    _scheduleMidnightCheck();
+  }
+
+  // Task operations
+  void _addTask(String title, String details) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final task = Task(
+      title: title,
+      details: details,
+      dueDate: DateTime.now(),
+      isDone: false,
+    );
+    taskProvider.addTask(task);
+  }
+  
+  void _toggleTaskCompletion(Task task) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    taskProvider.toggleTaskDone(task);
+  }
+
+  void _confirmDeleteTask(Task task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Task", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
+        content: const Text("Are you sure you want to delete this task?"),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.brown[400]),
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF990000), foregroundColor: Colors.white),
+            onPressed: () {
+              Provider.of<TaskProvider>(context, listen: false).removeTask(task);
+              Navigator.of(context).pop();
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Common validation helper
+  bool _validateTaskTitle() {
+    if (_taskController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Task title cannot be empty."), backgroundColor: Color(0xFFDE0A26)),
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // Common function to clear controllers and close dialog
+  void _clearAndClose() {
+    _taskController.clear();
+    _detailsController.clear();
+    Navigator.of(context).pop();
+  }
+
+  // Common dialog container
+  Widget _buildDialogContainer({required String title, required List<Widget> children}) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Container(
+        width: MediaQuery.of(context).size.width * 0.8,
+        constraints: const BoxConstraints(maxHeight: 400),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3D9),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.brown.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown)),
+            const SizedBox(height: 16),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Common dialog buttons
+  Widget _buildDialogButtons({required VoidCallback onAction, required String actionText}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        TextButton(
+          onPressed: _clearAndClose,
+          child: const Text("Cancel"),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.brown,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          onPressed: onAction,
+          child: Text(actionText),
+        ),
+      ],
+    );
+  }
+
+  void _showAddTaskDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _buildDialogContainer(
+        title: "Add Task",
+        children: [
+          _buildTextField(_taskController, "Task Title"),
+          const SizedBox(height: 12),
+          _buildDetailsField(),
+          const SizedBox(height: 20),
+          _buildDialogButtons(onAction: _handleAddTask, actionText: "Add"),
+        ],
+      ),
+    );
+  }
+
+  void _showEditTaskDialog(Task task) {
+    _taskController.text = task.title;
+    _detailsController.text = task.details;
+    
+    showDialog(
+      context: context,
+      builder: (context) => _buildDialogContainer(
+        title: "Edit Task",
+        children: [
+          _buildTextField(_taskController, "Task Title"),
+          const SizedBox(height: 12),
+          _buildDetailsField(),
+          const SizedBox(height: 20),
+          _buildDialogButtons(onAction: () => _handleEditTask(task), actionText: "Update"),
+        ],
+      ),
+    );
+  }
+
+  void _handleAddTask() {
+    if (!_validateTaskTitle()) return;
+    _addTask(_taskController.text.trim(), _detailsController.text.trim());
+    _clearAndClose();
+  }
+
+  void _handleEditTask(Task task) {
+    if (!_validateTaskTitle()) return;
+    
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final updatedTask = Task(
+      title: _taskController.text.trim(),
+      details: _detailsController.text.trim(),
+      dueDate: task.dueDate,
+      isDone: task.isDone,
+    );
+    
+    taskProvider.updateTask(task, updatedTask);
+    _clearAndClose();
+  }
+
+  // UI Builders
+  Widget _buildTextField(TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+      ),
+    );
+  }
+
+  Widget _buildDetailsField() {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+      child: Scrollbar(
+        child: SingleChildScrollView(
+          child: TextField(
+            controller: _detailsController,
+            maxLines: null,
+            keyboardType: TextInputType.multiline,
+            decoration: const InputDecoration(
+              hintText: "Details",
+              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: InputBorder.none,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskCard(Task task) {
+    return Card(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      elevation: 3,
+      color: const Color(0xFFF3E5AB),
+      child: ListTile(
+        contentPadding: const EdgeInsets.all(16),
+        title: Text(
+          task.title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            decoration: task.isDone ? TextDecoration.lineThrough : null,
+            fontSize: 18,
+            color: Colors.brown[900],
+          ),
+        ),
+        subtitle: Text(task.details),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue),
+              tooltip: 'Edit Task',
+              onPressed: () => _showEditTaskDialog(task),
+            ),
+            IconButton(
+              icon: Icon(
+                task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: task.isDone ? Colors.green : Colors.brown,
+              ),
+              onPressed: () => _toggleTaskCompletion(task),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Color(0xFF990000)),
+              tooltip: 'Delete Task',
+              onPressed: () => _confirmDeleteTask(task),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTasksList() {
+    return Consumer<TaskProvider>(
+      builder: (context, taskProvider, child) {
+        final todayTasks = taskProvider.getTasksFor(DateTime.now());
+
+        if (todayTasks.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 40),
+              child: Text("No tasks for today", style: TextStyle(fontSize: 16, color: Colors.grey)),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: todayTasks.length,
+          itemBuilder: (context, index) => _buildTaskCard(todayTasks[index]),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final todayDate = DateFormat('dd/MM/yyyy').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.brown, size: 32),
+      ),
+      drawer: const AppDrawer(),
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                const Center(
+                  child: Text("Today's Task", style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.brown)),
+                ),
+                const SizedBox(height: 40),
+                SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.6,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF3D9),
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [BoxShadow(color: Colors.brown.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
+                    ),
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: Text("Date: $todayDate", style: const TextStyle(fontSize: 14, color: Colors.brown)),
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(child: _buildTasksList()),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 50,
+            right: 20,
+            child: IconButton(
+              icon: const Icon(Icons.history, color: Colors.brown),
+              tooltip: "View History",
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => HistoryPage(tasks: []))),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 30),
+        child: FloatingActionButton(
+          backgroundColor: Colors.brown,
+          onPressed: _showAddTaskDialog,
+          child: const Icon(Icons.add, size: 30),
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+    );
+  }
+}
