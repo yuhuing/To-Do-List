@@ -1,0 +1,79 @@
+// -----------------------------------------
+// class Task {
+//   String title;
+//   String details;
+//   bool isDone;
+//   DateTime dueDate;
+
+//   Task({
+//     required this.title,
+//     required this.details,
+//     required this.dueDate,
+//     this.isDone = false,
+//   });
+// }
+
+// TaskModel.dart
+import 'package:flutter/material.dart';
+
+enum Priority { high, medium, low }
+
+class Task {
+  String title;
+  String details;
+  DateTime? dueDate;
+  bool isDone;
+  Priority priority;
+
+  Task({
+    required this.title,
+    this.details = '',
+    this.dueDate,
+    this.isDone = false,
+    this.priority =
+        Priority.medium, // Changed default to medium for better balance
+  });
+
+  // Helper method to get priority color
+  Color get priorityColor {
+    switch (priority) {
+      case Priority.high:
+        return Colors.red;
+      case Priority.medium:
+        return Colors.orange;
+      case Priority.low:
+        return Colors.green;
+    }
+  }
+
+  // Helper method to get priority display name
+  String get priorityDisplayName {
+    switch (priority) {
+      case Priority.high:
+        return 'High';
+      case Priority.medium:
+        return 'Medium';
+      case Priority.low:
+        return 'Low';
+    }
+  }
+
+  // Helper method to determine if task is overdue
+  bool get isOverdue {
+    if (dueDate == null || isDone) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final taskDate = DateTime(dueDate!.year, dueDate!.month, dueDate!.day);
+    return taskDate.isBefore(today);
+  }
+
+  // Helper method to get days until due
+  int? get daysUntilDue {
+    if (dueDate == null) return null;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final taskDate = DateTime(dueDate!.year, dueDate!.month, dueDate!.day);
+    return taskDate.difference(today).inDays;
+  }
+}
+// ---------------------------------------
