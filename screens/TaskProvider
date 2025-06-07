@@ -1,0 +1,98 @@
+import 'package:flutter/material.dart';
+import '../screens/TaskModel.dart'; // Make sure this points to your Task class
+
+// TaskProvider.dart
+class TaskProvider with ChangeNotifier {
+  final Map<DateTime, List<Task>> _tasks = {};
+
+  /// Adds a task to the specified date
+  void addTask(Task task) {
+    // ---------------------------------------------------------------------------------------
+    // sy: task.dueDate.year -> task.dueDate!.year, same goes to others
+    final key = DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day);
+    // ---------------------------------------------------------------------------------------
+    _tasks.putIfAbsent(key, () => []).add(task);
+    notifyListeners();
+  }
+
+  /// Gets all tasks for a specific date
+  List<Task> getTasksFor(DateTime date) {
+    final key = DateTime(date.year, date.month, date.day);
+    return _tasks[key] ?? [];
+  }
+
+  // --------------------------------------------------------------------
+  /// Gets tasks by priority (for LongTermTask screen)
+  List<Task> getTasksByPriority(Priority priority) {
+    final today = DateTime.now();
+    final todayKey = DateTime(today.year, today.month, today.day);
+    
+    return _tasks.entries
+        .where((entry) => !entry.key.isAtSameMomentAs(todayKey)) // Exclude today
+        .expand((entry) => entry.value)
+        .where((task) => task.priority == priority)
+        .toList()
+      ..sort((a, b) => (a.dueDate ?? DateTime.now())
+          .compareTo(b.dueDate ?? DateTime.now()));
+  }
+
+  /// Gets overdue tasks
+  List<Task> get overdueTasks {
+    return _tasks.values
+        .expand((taskList) => taskList)
+        .where((task) => task.isOverdue)
+        .toList();
+  }
+  // --------------------------------------------------------------------
+
+  /// Returns all tasks
+  Map<DateTime, List<Task>> get allTasks => _tasks;
+
+  // --------------------------------------------------------------------
+  /// Toggle task completion
+  void toggleTaskDone(Task task) {
+    task.isDone = !task.isDone;
+    notifyListeners();
+  }
+
+  /// Optionally: toggle task completion
+  // void toggleTaskDone(DateTime date, Task task) {
+  //   final key = DateTime(date.year, date.month, date.day);
+  //   final taskList = _tasks[key];
+
+  //   if (taskList != null) {
+  //     final index = taskList.indexOf(task);
+  //     if (index != -1) {
+  //       taskList[index].isDone = !taskList[index].isDone;
+  //       notifyListeners();
+  //     }
+  //   }
+  // }
+  // --------------------------------------------------------------------
+
+  // --------------------------------------------------------------------
+  /// Remove a task
+  void removeTask(Task task) {
+    for (var taskList in _tasks.values) {
+      if (taskList.remove(task)) {
+        notifyListeners();
+        break;
+      }
+    }
+  }
+
+  /// Update a task
+  void updateTask(Task oldTask, Task newTask) {
+    removeTask(oldTask);
+    addTask(newTask);
+  }
+
+  /// Optionally: remove a task
+  // void removeTask(DateTime date, Task task) {
+  //   final key = DateTime(date.year, date.month, date.day);
+  //   _tasks[key]?.remove(task);
+  //   notifyListeners();
+  // }
+  // --------------------------------------------------------------------
+
+}
