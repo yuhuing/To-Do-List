@@ -1,0 +1,423 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../widgets/AppDrawer.dart';
+import '../screens/TaskModel.dart';
+import '../screens/TaskProvider.dart';
+
+class LongTermTask extends StatefulWidget {
+  const LongTermTask({super.key});
+
+  @override
+  State<LongTermTask> createState() => _LongTermTaskState();
+}
+
+class _LongTermTaskState extends State<LongTermTask> {
+  // This function switches the task's 'done' status.
+  // Useful for marking a task as complete or incomplete.
+  void _toggleDone(Task task) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    taskProvider.toggleTaskDone(task);
+  }
+
+  // Common function for date picking used in both add and edit dialogs
+  Future<DateTime?> _pickDate(DateTime? currentDate) async {
+    final now = DateTime.now();
+    // showDatePicker(): Lets the user choose a date
+    return await showDatePicker(
+      context: context,
+      initialDate: currentDate ?? now.add(const Duration(days: 1)),
+      firstDate: now,
+      lastDate: DateTime(now.year + 5),
+    );
+  }
+
+  // Common function to determine priority based on days difference
+  Priority _getPriorityFromDays(int daysDiff) {
+    if (daysDiff <= 3) return Priority.high;
+    if (daysDiff <= 7) return Priority.medium;
+    return Priority.low;
+  }
+
+  // Common function to show validation error
+  void _showValidationError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+      ),
+    );
+  }
+
+  // Common dialog content builder for both add and edit dialogs
+  Widget _buildTaskDialogContent({
+    required TextEditingController titleController,
+    required TextEditingController detailsController,
+    required DateTime? selectedDate,
+    required Priority? selectedPriority,
+    required Function(DateTime?) onDateChanged,
+    required Function(Priority?) onPriorityChanged,
+    required VoidCallback onSave,
+    required String saveButtonText,
+  }) {
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (saveButtonText == "Update")
+            const Text(
+              "Edit Task",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          if (saveButtonText == "Update") const SizedBox(height: 10),
+          TextField(
+            controller: titleController,
+            decoration: const InputDecoration(hintText: "Task Title"),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: detailsController,
+            maxLines: 2,
+            decoration: const InputDecoration(hintText: "Details"),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ElevatedButton.icon(
+                onPressed: () async {
+                  final picked = await _pickDate(selectedDate);
+                  if (picked != null) {
+                    onDateChanged(picked);
+                  }
+                },
+                icon: const Icon(Icons.calendar_today),
+                label: Text(
+                  selectedDate != null
+                      ? DateFormat('dd/MM/yyyy').format(selectedDate)
+                      : "Select Date",
+                ),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+              ),
+              DropdownButton<Priority>(
+                value: selectedPriority,
+                hint: const Text("Priority"),
+                items: Priority.values.map((p) {
+                  return DropdownMenuItem(
+                    value: p,
+                    child: Text(p.name.toUpperCase()),
+                  );
+                }).toList(),
+                onChanged: onPriorityChanged,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: onSave,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+                child: Text(saveButtonText),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Dialog to modify existing task details
+  void _showEditTaskDialog(Task task) {
+    // Controls the input fields
+    final TextEditingController titleController = TextEditingController();
+    final TextEditingController detailsController = TextEditingController();
+
+    titleController.text = task.title;
+    detailsController.text = task.details;
+    DateTime? selectedDate = task.dueDate;
+    Priority? selectedPriority = task.priority;
+
+    // show text fields filled with task's current data
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                void updateTask() {
+                  if (titleController.text.trim().isEmpty) {
+                    _showValidationError("Task title cannot be empty.");
+                    return;
+                  }
+
+                  final updatedTask = Task(
+                    title: titleController.text.trim(),
+                    details: detailsController.text.trim(),
+                    dueDate: selectedDate ?? DateTime.now().add(const Duration(days: 1)),
+                    priority: selectedPriority ?? Priority.medium,
+                    isDone: task.isDone,
+                  );
+
+                  final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+                  taskProvider.updateTask(task, updatedTask);
+                  Navigator.of(context).pop();
+                }
+
+                return _buildTaskDialogContent(
+                  titleController: titleController,
+                  detailsController: detailsController,
+                  selectedDate: selectedDate,
+                  selectedPriority: selectedPriority,
+                  onDateChanged: (date) => setState(() => selectedDate = date),
+                  onPriorityChanged: (priority) => setState(() => selectedPriority = priority),
+                  onSave: updateTask,
+                  saveButtonText: "Update",
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _confirmDeleteTask(Task task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text(
+          "Delete Task",
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.brown),
+        ),
+        content: const Text("Are you sure you want to delete this task?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Provider.of<TaskProvider>(context, listen: false).removeTask(task);
+              Navigator.of(context).pop();
+            },
+            child: const Text("Delete"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskCard(Task task) {
+    return Card(
+      color: const Color(0xFFF3E5AB),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+      child: ListTile(
+        title: Text(
+          task.title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            decoration: task.isDone ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        subtitle: Text(
+          '${task.details}\n${task.dueDate != null ? 'Due: ${DateFormat('dd/MM/yyyy').format(task.dueDate!)}' : 'No due date'}',
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit, color: Colors.blue, size: 20),
+              onPressed: () => _showEditTaskDialog(task),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+              onPressed: () => _confirmDeleteTask(task),
+            ),
+            Checkbox(
+              value: task.isDone,
+              activeColor: Colors.green,
+              onChanged: (_) => _toggleDone(task),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZone(String title, Color color, Priority priority) {
+    return Consumer<TaskProvider>(
+      builder: (context, taskProvider, child) {
+        final taskList = taskProvider.getTasksByPriority(priority);
+
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.3),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                  color: Colors.brown,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: taskList.isEmpty
+                    ? const Center(
+                        child: Text(
+                          "No tasks",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      )
+                    : ListView(
+                        padding: EdgeInsets.zero,
+                        children: taskList.map(_buildTaskCard).toList(),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddTaskDialog() {
+    final TextEditingController titleController = TextEditingController();
+    final TextEditingController detailsController = TextEditingController();
+    DateTime? selectedDate = DateTime.now().add(const Duration(days: 1));
+    Priority? selectedPriority;
+    bool userSetPriorityManually = false; // Flag to track if user manually chose priority
+
+    showDialog<Task>(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                void saveTask() {
+                  if (titleController.text.trim().isEmpty) {
+                    _showValidationError("Task title cannot be empty.");
+                    return;
+                  }
+
+                  final now = DateTime.now();
+                  final today = DateTime(now.year, now.month, now.day);
+
+                  DateTime finalDate = selectedDate ?? today.add(const Duration(days: 1));
+                  Priority finalPriority = selectedPriority ?? 
+                      _getPriorityFromDays(finalDate.difference(today).inDays);
+
+                  final newTask = Task(
+                    title: titleController.text.trim(),
+                    details: detailsController.text.trim(),
+                    dueDate: finalDate,
+                    priority: finalPriority,
+                  );
+
+                  final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+                  taskProvider.addTask(newTask);
+                  Navigator.of(context).pop();
+                }
+
+                return _buildTaskDialogContent(
+                  titleController: titleController,
+                  detailsController: detailsController,
+                  selectedDate: selectedDate,
+                  selectedPriority: selectedPriority,
+                  onDateChanged: (date) {
+                    setState(() {
+                      selectedDate = date;
+                      // Only auto-update priority if user hasn't manually set it
+                      if (!userSetPriorityManually && date != null) {
+                        final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+                        selectedPriority = _getPriorityFromDays(date.difference(today).inDays);
+                      }
+                    });
+                  },
+                  onPriorityChanged: (priority) {
+                    setState(() {
+                      selectedPriority = priority;
+                      userSetPriorityManually = true; // Mark that user has manually chosen priority
+                    });
+                  },
+                  onSave: saveTask,
+                  saveButtonText: "Add",
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        title: const Text("Long-Term Task"),
+        backgroundColor: const Color(0xFF6F4E37),
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            color: Colors.brown,
+            iconSize: 36,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            Expanded(
+              flex: 3,
+              child: _buildZone("Red Zone", Colors.red, Priority.high),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              flex: 3,
+              child: _buildZone("Yellow Zone", Colors.yellow, Priority.medium),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              flex: 3,
+              child: _buildZone("Green Zone", Colors.green, Priority.low),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.brown,
+        onPressed: _showAddTaskDialog,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
