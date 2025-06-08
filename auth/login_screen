@@ -141,27 +141,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (user != null) {
         log("User Logged In");
-        
-        // // 🔥 新增：从 Firestore 获取用户名
-        // final uid = user.user!.uid;
-        // final doc = await FirebaseFirestore.instance
-        //     .collection('users')
-        //     .doc(uid)
-        //     .get();
-
-        // String username = '';
-        // if (doc.exists) {
-        //   username = doc['username'];
-        //   GlobalState.username = username; // 可选：储存给全局用
-        // }
 
         // 登录成功，跳转到 TodayTask
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder:
-                (context) => TodayTask(),
-          ),
+          MaterialPageRoute(builder: (context) => TodayTask()),
         );
       }
     } on FirebaseAuthException catch (e) {
@@ -179,9 +163,18 @@ class _LoginScreenState extends State<LoginScreen> {
         case 'user-disabled':
           errorMessage = "This account has been disabled.";
           break;
+        // ------------------------------------------------------
+        case 'invalid-credential':
+          errorMessage = "Invalid email or password.";
+          break;
+        // -----------------------------------------------------
         default:
           errorMessage = e.message ?? "Login failed. Please try again.";
       }
+      // ----------------------------------------------------------
+      // sy: just to show error in log
+      log("Firebase Auth Error: ${e.code} - ${e.message}"); 
+      // ----------------------------------------------------------
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(errorMessage),
@@ -189,6 +182,10 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
     } catch (e) {
+      // ---------------------------------------------------
+      // sy: just to show error in log
+      log("Login Error: $e");
+      // ---------------------------------------------------
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Something went wrong. Please try again."),
