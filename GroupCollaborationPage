@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'AppDrawer.dart';
 
 void main() {
@@ -10,29 +12,303 @@ void main() {
 
 // ======= MODELS =======
 class GroupMember {
+  final String id;
   final String name;
-  final List<String> tasks;
+  final String email;
+  final List<Task> tasks;
 
-  GroupMember({required this.name}) : tasks = [];
+  GroupMember({
+    required this.id,
+    required this.name,
+    required this.email,
+  }) : tasks = [];
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+    };
+  }
+
+  factory GroupMember.fromMap(Map<String, dynamic> map) {
+    return GroupMember(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      email: map['email'] ?? '',
+    );
+  }
+}
+
+class Task {
+  final String id;
+  final String title;
+  final String assignedTo; // member ID
+  final String createdBy; // member ID
+  final DateTime createdAt;
+  bool isCompleted;
+
+  Task({
+    required this.id,
+    required this.title,
+    required this.assignedTo,
+    required this.createdBy,
+    required this.createdAt,
+    this.isCompleted = false,
+  });
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'assignedTo': assignedTo,
+      'createdBy': createdBy,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'isCompleted': isCompleted,
+    };
+  }
+
+  factory Task.fromMap(Map<String, dynamic> map) {
+    return Task(
+      id: map['id'] ?? '',
+      title: map['title'] ?? '',
+      assignedTo: map['assignedTo'] ?? '',
+      createdBy: map['createdBy'] ?? '',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(map['createdAt'] ?? 0),
+      isCompleted: map['isCompleted'] ?? false,
+    );
+  }
 }
 
 class Group {
+  final String id;
   final String name;
+  final String createdBy;
   final List<GroupMember> members;
+  final List<Task> tasks;
 
-  Group({required this.name}) : members = [];
+  Group({
+    required this.id,
+    required this.name,
+    required this.createdBy,
+  }) : members = [], tasks = [];
+
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'createdBy': createdBy,
+      'members': members.map((member) => member.toMap()).toList(),
+    };
+  }
+
+  factory Group.fromMap(Map<String, dynamic> map) {
+    final group = Group(
+      id: map['id'] ?? '',
+      name: map['name'] ?? '',
+      createdBy: map['createdBy'] ?? '',
+    );
+    
+    if (map['members'] != null) {
+      group.members.addAll(
+        (map['members'] as List).map((memberMap) => GroupMember.fromMap(memberMap))
+      );
+    }
+    
+    return group;
+  }
+}
+
+// ======= FIREBASE SERVICE =======
+class FirebaseService {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  // Get current user
+  static User? get currentUser => _auth.currentUser;
+
+  // Find user by email
+  static Future<DocumentSnapshot?> findUserByEmail(String email) async {
+    try {
+      final querySnapshot = await _firestore
+          .collection('users')
+          .where('email', isEqualTo: email.toLowerCase())
+          .limit(1)
+          .get();
+      
+      if (querySnapshot.docs.isNotEmpty) {
+        return querySnapshot.docs.first;
+      }
+      return null;
+    } catch (e) {
+      print('Error finding user: $e');
+      return null;
+    }
+  }
+
+  // Create group
+  static Future<String?> createGroup(String groupName) async {
+    try {
+      final user = currentUser;
+      if (user == null) return null;
+
+      final groupDoc = _firestore.collection('groups').doc();
+      final group = Group(
+        id: groupDoc.id,
+        name: groupName,
+        createdBy: user.uid,
+      );
+
+      await groupDoc.set(group.toMap());
+      return groupDoc.id;
+    } catch (e) {
+      print('Error creating group: $e');
+      return null;
+    }
+  }
+
+  // Add member to group
+  static Future<bool> addMemberToGroup(String groupId, String memberEmail) async {
+    try {
+      final userDoc = await findUserByEmail(memberEmail);
+      if (userDoc == null) return false;
+
+      final userData = userDoc.data() as Map<String, dynamic>;
+      final member = GroupMember(
+        id: userDoc.id,
+        name: userData['name'] ?? memberEmail.split('@')[0],
+        email: memberEmail,
+      );
+
+      await _firestore.collection('groups').doc(groupId).update({
+        'members': FieldValue.arrayUnion([member.toMap()]),
+      });
+
+      // Add group to user's groups
+      await _firestore.collection('users').doc(userDoc.id).update({
+        'groups': FieldValue.arrayUnion([groupId]),
+      });
+
+      return true;
+    } catch (e) {
+      print('Error adding member: $e');
+      return false;
+    }
+  }
+
+  // Create task
+  static Future<String?> createTask(String groupId, String title, String assignedToId) async {
+    try {
+      final user = currentUser;
+      if (user == null) return null;
+
+      final taskDoc = _firestore.collection('groups').doc(groupId).collection('tasks').doc();
+      final task = Task(
+        id: taskDoc.id,
+        title: title,
+        assignedTo: assignedToId,
+        createdBy: user.uid,
+        createdAt: DateTime.now(),
+      );
+
+      await taskDoc.set(task.toMap());
+
+      // Add task to user's personal tasks
+      await _firestore.collection('users').doc(assignedToId).update({
+        'tasks': FieldValue.arrayUnion([{
+          'taskId': taskDoc.id,
+          'groupId': groupId,
+          'title': title,
+          'createdAt': DateTime.now().millisecondsSinceEpoch,
+        }]),
+      });
+
+      return taskDoc.id;
+    } catch (e) {
+      print('Error creating task: $e');
+      return null;
+    }
+  }
+
+  // Delete task
+  static Future<bool> deleteTask(String groupId, String taskId, String assignedToId) async {
+    try {
+      await _firestore.collection('groups').doc(groupId).collection('tasks').doc(taskId).delete();
+
+      // Remove from user's personal tasks
+      final userDoc = await _firestore.collection('users').doc(assignedToId).get();
+      if (userDoc.exists) {
+        final userData = userDoc.data() as Map<String, dynamic>;
+        final tasks = List<Map<String, dynamic>>.from(userData['tasks'] ?? []);
+        tasks.removeWhere((task) => task['taskId'] == taskId);
+        
+        await _firestore.collection('users').doc(assignedToId).update({
+          'tasks': tasks,
+        });
+      }
+
+      return true;
+    } catch (e) {
+      print('Error deleting task: $e');
+      return false;
+    }
+  }
+
+  // Toggle task completion
+  static Future<bool> toggleTaskCompletion(String groupId, String taskId, bool isCompleted) async {
+    try {
+      await _firestore.collection('groups').doc(groupId).collection('tasks').doc(taskId).update({
+        'isCompleted': isCompleted,
+      });
+      return true;
+    } catch (e) {
+      print('Error toggling task: $e');
+      return false;
+    }
+  }
+
+  // Get groups stream
+  static Stream<List<Group>> getGroupsStream() {
+    final user = currentUser;
+    if (user == null) return Stream.value([]);
+
+    return _firestore
+        .collection('groups')
+        .where('createdBy', isEqualTo: user.uid)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Group.fromMap(data);
+      }).toList();
+    });
+  }
+
+  // Get tasks stream for a group
+  static Stream<List<Task>> getTasksStream(String groupId) {
+    return _firestore
+        .collection('groups')
+        .doc(groupId)
+        .collection('tasks')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Task.fromMap(data);
+      }).toList();
+    });
+  }
 }
 
 // ======= MAIN PAGE =======
 class GroupCollaborationPage extends StatefulWidget {
-
   @override
   State<GroupCollaborationPage> createState() => _GroupCollaborationPageState();
 }
 
 class _GroupCollaborationPageState extends State<GroupCollaborationPage> {
   final TextEditingController _groupController = TextEditingController();
-  final List<Group> _groups = [];
 
   @override
   Widget build(BuildContext context) {
@@ -41,10 +317,7 @@ class _GroupCollaborationPageState extends State<GroupCollaborationPage> {
         title: const Text("Group Collaboration"),
         backgroundColor: Colors.brown[400],
       ),
-
-      //List Tile
       drawer: AppDrawer(),
-      
       body: Column(
         children: [
           Padding(
@@ -62,12 +335,19 @@ class _GroupCollaborationPageState extends State<GroupCollaborationPage> {
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_groupController.text.trim().isNotEmpty) {
-                      setState(() {
-                        _groups.add(Group(name: _groupController.text.trim()));
+                      final groupId = await FirebaseService.createGroup(_groupController.text.trim());
+                      if (groupId != null) {
                         _groupController.clear();
-                      });
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Group created successfully!')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Failed to create group')),
+                        );
+                      }
                     }
                   },
                   child: const Text("Add Group"),
@@ -76,12 +356,25 @@ class _GroupCollaborationPageState extends State<GroupCollaborationPage> {
             ),
           ),
           Expanded(
-            child: ListView.builder(
-              itemCount: _groups.length,
-              itemBuilder: (context, index) {
-                return GroupCard(
-                  group: _groups[index],
-                  onUpdate: () => setState(() {}),
+            child: StreamBuilder<List<Group>>(
+              stream: FirebaseService.getGroupsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return const Center(
+                    child: Text('No groups yet. Create your first group!'),
+                  );
+                }
+
+                final groups = snapshot.data!;
+                return ListView.builder(
+                  itemCount: groups.length,
+                  itemBuilder: (context, index) {
+                    return GroupCard(group: groups[index]);
+                  },
                 );
               },
             ),
@@ -95,13 +388,13 @@ class _GroupCollaborationPageState extends State<GroupCollaborationPage> {
 // ======= GROUP CARD =======
 class GroupCard extends StatelessWidget {
   final Group group;
-  final VoidCallback onUpdate;
 
-  const GroupCard({super.key, required this.group, required this.onUpdate});
+  const GroupCard({super.key, required this.group});
 
   @override
   Widget build(BuildContext context) {
     final TextEditingController _memberController = TextEditingController();
+    final TextEditingController _taskController = TextEditingController();
 
     return Card(
       elevation: 3,
@@ -109,6 +402,7 @@ class GroupCard extends StatelessWidget {
       child: ExpansionTile(
         title: Text(group.name, style: const TextStyle(fontWeight: FontWeight.bold)),
         children: [
+          // Add Member Section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4),
             child: Row(
@@ -117,18 +411,31 @@ class GroupCard extends StatelessWidget {
                   child: TextField(
                     controller: _memberController,
                     decoration: const InputDecoration(
-                      labelText: 'Add member',
+                      labelText: 'Add member by email',
                       border: OutlineInputBorder(),
+                      hintText: 'example@gmail.com',
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_memberController.text.trim().isNotEmpty) {
-                      group.members.add(GroupMember(name: _memberController.text.trim()));
-                      _memberController.clear();
-                      onUpdate();
+                      final success = await FirebaseService.addMemberToGroup(
+                        group.id,
+                        _memberController.text.trim(),
+                      );
+                      
+                      if (success) {
+                        _memberController.clear();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Member added successfully!')),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('User not found or failed to add member')),
+                        );
+                      }
                     }
                   },
                   child: const Text("Add"),
@@ -136,49 +443,8 @@ class GroupCard extends StatelessWidget {
               ],
             ),
           ),
-          ...group.members.asMap().entries.map((entry) {
-            final memberIndex = entry.key;
-            final member = entry.value;
-            return MemberCard(
-              member: member,
-              onAddTask: (task) {
-                member.tasks.add(task);
-                onUpdate();
-              },
-              onRemoveTask: (taskIndex) {
-                member.tasks.removeAt(taskIndex);
-                onUpdate();
-              },
-            );
-          }),
-        ],
-      ),
-    );
-  }
-}
 
-// ======= MEMBER CARD =======
-class MemberCard extends StatelessWidget {
-  final GroupMember member;
-  final Function(String task) onAddTask;
-  final Function(int taskIndex) onRemoveTask;
-
-  const MemberCard({
-    super.key,
-    required this.member,
-    required this.onAddTask,
-    required this.onRemoveTask,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final TextEditingController _taskController = TextEditingController();
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: ExpansionTile(
-        title: Text(member.name),
-        children: [
+          // Create Task Section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4),
             child: Row(
@@ -187,7 +453,7 @@ class MemberCard extends StatelessWidget {
                   child: TextField(
                     controller: _taskController,
                     decoration: const InputDecoration(
-                      labelText: 'New Task',
+                      labelText: 'Create new task',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -196,28 +462,162 @@ class MemberCard extends StatelessWidget {
                 ElevatedButton(
                   onPressed: () {
                     if (_taskController.text.trim().isNotEmpty) {
-                      onAddTask(_taskController.text.trim());
+                      _showAssignTaskDialog(context, group, _taskController.text.trim());
                       _taskController.clear();
                     }
                   },
-                  child: const Text("Add Task"),
+                  child: const Text("Create Task"),
                 ),
               ],
             ),
           ),
-          ...member.tasks.asMap().entries.map((entry) {
-            final taskIndex = entry.key;
-            final task = entry.value;
-            return ListTile(
-              title: Text(task),
-              trailing: IconButton(
-                icon: const Icon(Icons.delete, color: Colors.red),
-                onPressed: () => onRemoveTask(taskIndex),
+
+          // Members List
+          if (group.members.isNotEmpty) ...[
+            const Padding(
+              padding: EdgeInsets.all(12.0),
+              child: Text('Members:', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+            ...group.members.map((member) => ListTile(
+              leading: CircleAvatar(
+                child: Text(member.name[0].toUpperCase()),
               ),
-            );
-          }),
+              title: Text(member.name),
+              subtitle: Text(member.email),
+            )),
+          ],
+
+          // Tasks List
+          StreamBuilder<List<Task>>(
+            stream: FirebaseService.getTasksStream(group.id),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(12.0),
+                  child: Text('No tasks yet.'),
+                );
+              }
+
+              final tasks = snapshot.data!;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(12.0),
+                    child: Text('Tasks:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  ),
+                  ...tasks.map((task) => TaskCard(
+                    task: task,
+                    group: group,
+                  )),
+                ],
+              );
+            },
+          ),
         ],
       ),
     );
+  }
+
+  void _showAssignTaskDialog(BuildContext context, Group group, String taskTitle) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Assign Task'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Task: $taskTitle'),
+            const SizedBox(height: 16),
+            const Text('Assign to:'),
+            ...group.members.map((member) => ListTile(
+              title: Text(member.name),
+              subtitle: Text(member.email),
+              onTap: () async {
+                Navigator.pop(context);
+                final taskId = await FirebaseService.createTask(
+                  group.id,
+                  taskTitle,
+                  member.id,
+                );
+                
+                if (taskId != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Task assigned to ${member.name}')),
+                  );
+                }
+              },
+            )),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ======= TASK CARD =======
+class TaskCard extends StatelessWidget {
+  final Task task;
+  final Group group;
+
+  const TaskCard({
+    super.key,
+    required this.task,
+    required this.group,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final assignedMember = group.members.firstWhere(
+      (member) => member.id == task.assignedTo,
+      orElse: () => GroupMember(id: '', name: 'Unknown', email: ''),
+    );
+
+    final createdByMember = group.members.firstWhere(
+      (member) => member.id == task.createdBy,
+      orElse: () => GroupMember(id: '', name: 'Unknown', email: ''),
+    );
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: ListTile(
+        leading: Checkbox(
+          value: task.isCompleted,
+          onChanged: (value) {
+            FirebaseService.toggleTaskCompletion(group.id, task.id, value ?? false);
+          },
+        ),
+        title: Text(
+          task.title,
+          style: TextStyle(
+            decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+          ),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Assigned to: ${assignedMember.name}'),
+            Text('Created by: ${createdByMember.name}'),
+            Text('Created: ${_formatDate(task.createdAt)}'),
+          ],
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete, color: Colors.red),
+          onPressed: () {
+            FirebaseService.deleteTask(group.id, task.id, task.assignedTo);
+          },
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
   }
 }
