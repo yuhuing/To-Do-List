@@ -26,7 +26,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Calendar App',
-      theme: ThemeData(primarySwatch: Colors.blue),
+      theme: ThemeData(primarySwatch: Colors.brown),
       debugShowCheckedModeBanner: false,
       home: CalendarPage(), // ✅ <- Your calendar screen here
     );
@@ -77,223 +77,498 @@ class _CalendarPageState extends State<CalendarPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: creamWhite,
       appBar: AppBar(
-        title: const Text('Task Calendar'),
-        backgroundColor: const Color(0xFF6F4E37),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(Icons.calendar_today, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "Task Calendar",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: espresso,
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [espresso, coffeeBrown],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
       ),
 
       //List Tile
       drawer: const AppDrawer(),
       
-      body: Column(
-        children: [
-          // calendar widget
-          Consumer<TaskProvider>(
-            builder: (context, taskProvider, child) {
-              return TableCalendar(
-                firstDay: DateTime.utc(2020, 1, 1),
-                lastDay: DateTime.utc(2030, 12, 31),
-                focusedDay: _focusedDay,
-                calendarFormat: CalendarFormat.month,
-                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-                calendarStyle: CalendarStyle(
-                  todayDecoration: BoxDecoration(
-                    color: Colors.orangeAccent,
-                    shape: BoxShape.circle,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [creamWhite, milkFoam],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          children: [
+            // Calendar Container with coffee theme
+            Container(
+              margin: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: coffeeShadow,
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
                   ),
-                  selectedDecoration: BoxDecoration(
-                    color: Colors.brown,
-                    shape: BoxShape.circle,
-                  ),
-                  markerDecoration: BoxDecoration(shape: BoxShape.circle),
-                  weekendTextStyle: TextStyle(color: Colors.grey.shade700),
-                ),
-                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Consumer<TaskProvider>(
+                  builder: (context, taskProvider, child) {
+                    return TableCalendar(
+                      firstDay: DateTime.utc(2020, 1, 1),
+                      lastDay: DateTime.utc(2030, 12, 31),
+                      focusedDay: _focusedDay,
+                      calendarFormat: CalendarFormat.month,
+                      availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+                      
+                      headerStyle: HeaderStyle(
+                        titleCentered: true,
+                        titleTextStyle: TextStyle(
+                          color: espresso,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        formatButtonVisible: false,
+                        leftChevronIcon: Icon(Icons.chevron_left, color: espresso),
+                        rightChevronIcon: Icon(Icons.chevron_right, color: espresso),
+                      ),
 
-                // 1. Updates _selectedday and _focusedDay
-                // 2. opens bottom sheet if tasks exist on that date
-                onDaySelected: (selected, focused) {
-                  final normalized = _stripTime(selected);
-
-                  setState(() {
-                    _selectedDay = selected;
-                    _focusedDay = focused;
-                  });
-
-                  if (taskProvider.getTasksFor(normalized).isNotEmpty) {
-                    showModalBottomSheet(
-                      context: context,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
+                      // Coffee-themed calendar styling
+                      calendarStyle: CalendarStyle(
+                        // Today's date styling
+                        todayDecoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [caramelBrown, coffeeBrown],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        todayTextStyle: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        
+                        // Selected date styling
+                        selectedDecoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [espresso, coffeeBrown],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: coffeeShadow,
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        selectedTextStyle: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        
+                        // Default date styling
+                        defaultTextStyle: TextStyle(color: espresso),
+                        weekendTextStyle: TextStyle(color: caramelBrown),
+                        outsideTextStyle: TextStyle(color: Colors.grey.shade400),
+                        
+                        // Marker styling
+                        markerDecoration: BoxDecoration(shape: BoxShape.circle),
+                        markersMaxCount: 3,
+                        
+                        // Cell decoration
+                        cellMargin: EdgeInsets.all(4),
+                        cellPadding: EdgeInsets.zero,
+                      ),
+                      
+                      // Days of week styling
+                      daysOfWeekStyle: DaysOfWeekStyle(
+                        weekdayStyle: TextStyle(
+                          color: coffeeBrown,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        weekendStyle: TextStyle(
+                          color: caramelBrown,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      builder: (context) => _buildTaskList(normalized),
-                    );
-                  }
-                },
+                      
+                      selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
 
-                // Calendar builders with star sticker logic
-                calendarBuilders: CalendarBuilders(
-                  markerBuilder: (context, date, events) {
-                    final normalizedDate = _stripTime(date);
-                    final tasksForDate = taskProvider.getTasksFor(normalizedDate);
+                      // 1. Updates _selectedday and _focusedDay
+                      // 2. opens bottom sheet if tasks exist on that date
+                      onDaySelected: (selected, focused) {
+                        final normalized = _stripTime(selected);
 
-                    List<Widget> markers = [];
+                        setState(() {
+                          _selectedDay = selected;
+                          _focusedDay = focused;
+                        });
 
-                    // Add star sticker if conditions are met
-                    if (_shouldShowStar(normalizedDate)) {
-                      markers.add(
-                        Positioned(
-                          top: -2,
-                          right: -2,
-                          child: Container(
-                            width: 16,
-                            height: 16,
-                            child: Icon(
-                              Icons.star,
-                              color: Colors.amber,
-                              size: 16,
+                        if (taskProvider.getTasksFor(normalized).isNotEmpty) {
+                          showModalBottomSheet(
+                            context: context,
+                            backgroundColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(25),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
-                    }
-
-                    // Add task priority dots (existing logic)
-                    if (tasksForDate.isNotEmpty) {
-                      final now = DateTime.now();
-                      final daysLeft = normalizedDate.difference(_stripTime(now)).inDays;
-
-                      List<Color> colors = tasksForDate.map((task) {
-                        if (daysLeft <= 3) {
-                          return Colors.red;
-                        } else if (daysLeft <= 7) {
-                          return Colors.yellow;
-                        } else {
-                          return Colors.green;
+                            builder: (context) => _buildTaskList(normalized),
+                          );
                         }
-                      }).toList();
+                      },
 
-                      markers.add(
-                        Positioned(
-                          bottom: 2,
-                          left: 0,
-                          right: 0,
-                          child: Wrap(
-                            alignment: WrapAlignment.center,
-                            spacing: 2,
-                            children: colors.take(3).map((color) {
-                              return Container(
-                                width: 6,
-                                height: 6,
-                                margin: const EdgeInsets.symmetric(vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  shape: BoxShape.circle,
+                      // Calendar builders with star sticker logic
+                      calendarBuilders: CalendarBuilders(
+                        markerBuilder: (context, date, events) {
+                          final normalizedDate = _stripTime(date);
+                          final tasksForDate = taskProvider.getTasksFor(normalizedDate);
+
+                          List<Widget> markers = [];
+
+                          // Add star sticker if conditions are met
+                          if (_shouldShowStar(normalizedDate)) {
+                            markers.add(
+                              Positioned(
+                                top: -2,
+                                right: -2,
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [Colors.amber, Colors.orange],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.amber.withOpacity(0.3),
+                                        blurRadius: 4,
+                                        offset: Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    Icons.star,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
                                 ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                      );
-                    }
+                              ),
+                            );
+                          }
 
-                    if (markers.isEmpty) return const SizedBox.shrink();
+                          // Add task priority dots (existing logic)
+                          if (tasksForDate.isNotEmpty) {
+                            final now = DateTime.now();
+                            final daysLeft = normalizedDate.difference(_stripTime(now)).inDays;
 
-                    return Stack(
-                      clipBehavior: Clip.none,
-                      children: markers,
+                            List<Color> colors = tasksForDate.map((task) {
+                              if (daysLeft <= 3) {
+                                return Colors.red.shade600;
+                              } else if (daysLeft <= 7) {
+                                return caramelBrown;
+                              } else {
+                                return Colors.green.shade600;
+                              }
+                            }).toList();
+
+                            markers.add(
+                              Positioned(
+                                bottom: 2,
+                                left: 0,
+                                right: 0,
+                                child: Wrap(
+                                  alignment: WrapAlignment.center,
+                                  spacing: 2,
+                                  children: colors.take(3).map((color) {
+                                    return Container(
+                                      width: 6,
+                                      height: 6,
+                                      margin: const EdgeInsets.symmetric(vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: color.withOpacity(0.3),
+                                            blurRadius: 2,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            );
+                          }
+
+                          if (markers.isEmpty) return const SizedBox.shrink();
+
+                          return Stack(
+                            clipBehavior: Clip.none,
+                            children: markers,
+                          );
+                        },
+                      ),
                     );
                   },
                 ),
-              );
-            },
-          ),
-          const Spacer(),
-        ],
+              ),
+            ),
+            const Spacer(),
+          ],
+        ),
       ),
     );
   }
 
-  // Task List Modal Sheet
+  // Task List Modal Sheet with coffee theme
   Widget _buildTaskList(DateTime day) {
     final tasks = Provider.of<TaskProvider>(context).getTasksFor(day);
     final completedTasks = tasks.where((task) => task.isDone).length;
     final totalTasks = tasks.length;
 
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Text(
-                '${day.day}/${day.month}/${day.year}',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
-              const Spacer(),
-              // Show star in modal if all conditions are met
-              if (_shouldShowStar(day))
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.star, color: Colors.amber, size: 16),
-                      const SizedBox(width: 4),
-                      Text('All Done!', style: TextStyle(color: Colors.amber[800], fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Tasks: $completedTasks/$totalTasks completed',
-            style: TextStyle(color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 10),
-          ...tasks.map(
-            (task) => Card(
-              color: task.isDone ? Colors.green.shade100 : Colors.orange.shade50,
-              child: ListTile(
-                title: Text(
-                  task.title,
-                  style: TextStyle(
-                    decoration: task.isDone ? TextDecoration.lineThrough : null,
-                  ),
-                ),
-                trailing: Icon(
-                  task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: task.isDone ? Colors.green : Colors.orange,
-                ),
-                subtitle: Text(task.details.isEmpty ? 'No details' : task.details),
-              ),
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+        boxShadow: [
+          BoxShadow(
+            color: coffeeShadow,
+            blurRadius: 20,
+            offset: Offset(0, -5),
           ),
         ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            
+            // Header with coffee theme
+            Container(
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [creamWhite, milkFoam],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(15),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [espresso, coffeeBrown],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.calendar_today, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${day.day}/${day.month}/${day.year}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: espresso,
+                        ),
+                      ),
+                      Text(
+                        'Tasks: $completedTasks/$totalTasks completed',
+                        style: TextStyle(
+                          color: coffeeBrown,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Spacer(),
+                  // Show star in modal if all conditions are met
+                  if (_shouldShowStar(day))
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.amber.shade100, Colors.orange.shade50],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.star, color: Colors.amber.shade700, size: 16),
+                          const SizedBox(width: 4),
+                          Text(
+                            'All Done!',
+                            style: TextStyle(
+                              color: Colors.amber.shade800,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            // Task list
+            ...tasks.map(
+              (task) => Container(
+                margin: EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: task.isDone ? Colors.green.shade50 : milkFoam,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: task.isDone ? Colors.green.shade200 : Colors.grey.shade200,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: coffeeShadow,
+                      blurRadius: 5,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ListTile(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  title: Text(
+                    task.title,
+                    style: TextStyle(
+                      decoration: task.isDone ? TextDecoration.lineThrough : null,
+                      color: task.isDone ? Colors.green.shade700 : espresso,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: Container(
+                    padding: EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: task.isDone ? Colors.green.shade100 : caramelBrown.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                      color: task.isDone ? Colors.green.shade600 : caramelBrown,
+                      size: 20,
+                    ),
+                  ),
+                  subtitle: task.details.isEmpty ? null : Text(
+                    task.details,
+                    style: TextStyle(
+                      color: task.isDone ? Colors.green.shade600 : coffeeBrown,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  // Navigation button widget
+  // Navigation button widget with coffee theme
   Widget _navButton(String label) {
-    return ElevatedButton(
-      onPressed: () {
-        // Add navigation logic here
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor:
-            label == 'Page 4' ? Colors.orange : const Color(0xFF6F4E37),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: label == 'Page 4' ? [Colors.orange, Colors.deepOrange] : [espresso, coffeeBrown],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: coffeeShadow,
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
       ),
-      child: Text(label),
+      child: ElevatedButton(
+        onPressed: () {
+          // Add navigation logic here
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
     );
   }
 }
