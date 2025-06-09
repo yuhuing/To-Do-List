@@ -1,34 +1,139 @@
 import 'package:flutter/material.dart';
-import '../screens/TaskModel.dart'; // Make sure this points to your Task class
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../screens/TaskModel.dart';
 
-// TaskProvider.dart
 class TaskProvider with ChangeNotifier {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  
   final Map<DateTime, List<Task>> _tasks = {};
+  bool _isLoading = false;
 
-  /// Adds a task to the specified date
-  void addTask(Task task) {
-    // ---------------------------------------------------------------------------------------
-    // sy: task.dueDate.year -> task.dueDate!.year, same goes to others
-    final key = DateTime(task.dueDate!.year, task.dueDate!.month, task.dueDate!.day);
-    // ---------------------------------------------------------------------------------------
-    _tasks.putIfAbsent(key, () => []).add(task);
-    notifyListeners();
+  bool get isLoading => _isLoading;
+
+  // Get current user ID
+  String? get _currentUserId => _auth.currentUser?.uid;
+
+  // Get reference to user's tasks collection(create task subcollection)
+  CollectionReference? get _userTasksCollection {
+    if (_currentUserId == null) return null;
+    return _firestore.collection('users').doc(_currentUserId).collection('tasks');
   }
 
-  /// Gets all tasks for a specific date
+  // Expose userTasksCollection for direct StreamBuilder usage in UI
+  CollectionReference? get userTasksCollection => _userTasksCollection;
+
+
+  // 统一的马来西亚时间获取
+  DateTime _getMalaysiaTime() {
+    return DateTime.now().toUtc().add(const Duration(hours: 8));
+  }
+  
+  // 统一的日期键值生成
+  DateTime _getMalaysiaDateKey(DateTime date) {
+    final malaysiaTime = date.toUtc().add(const Duration(hours: 8));
+    return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  }
+
+  /// Initialize and load tasks from Firestore
+  Future<void> initializeTasks() async {
+    if (_currentUserId == null) return;
+    
+    if (_isLoading) return; // 防止重复初始化
+    
+    _isLoading = true;
+    // 使用 addPostFrameCallback 确保在构建完成后再通知
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      notifyListeners();
+    });
+
+    try {
+      await _loadTasksFromFirestore();
+    } catch (e) {
+      print('Error loading tasks: $e');
+    } finally {
+      _isLoading = false;
+      // 使用 addPostFrameCallback 确保在构建完成后再通知
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifyListeners();
+      });
+    }
+  }
+
+  /// Load all tasks from Firestore
+  Future<void> _loadTasksFromFirestore() async {
+    if (_userTasksCollection == null) return;
+
+    try {
+      final querySnapshot = await _userTasksCollection!.get();
+      _tasks.clear();
+
+      for (var doc in querySnapshot.docs) {
+        final taskData = doc.data() as Map<String, dynamic>;
+        final task = Task.fromFirestore(doc.id, taskData);
+        
+        if (task.dueDate != null) {
+          final key = _getMalaysiaDateKey(task.dueDate!);
+          _tasks.putIfAbsent(key, () => []).add(task);
+        }
+      }
+    } catch (e) {
+      print('Error loading tasks from Firestore: $e');
+      rethrow;
+    }
+  }
+
+  /// Adds a task to Firestore and local storage
+  Future<void> addTask(Task task) async {
+    if (_userTasksCollection == null) return;
+    
+    // 确保使用相同的日期键值生成方式
+    final dateKey = _getMalaysiaDateKey(task.dueDate!);
+    
+    if (_tasks[dateKey] == null) {
+      _tasks[dateKey] = [];
+    }
+    _tasks[dateKey]!.add(task);
+    
+    try {
+      // Add to Firestore
+      final docRef = await _userTasksCollection!.add(task.toFirestore());
+      
+      // Update task with Firestore ID
+      task.firestoreId = docRef.id;
+      
+      // Add to local storage
+      if (task.dueDate != null) {
+        final key = _getMalaysiaDateKey(task.dueDate!);
+        _tasks.putIfAbsent(key, () => []).add(task);
+      }
+      
+      // Update user stats
+      await _updateUserStats();
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error adding task: $e');
+      rethrow;
+    }
+  }
+
+  
   List<Task> getTasksFor(DateTime date) {
-    final key = DateTime(date.year, date.month, date.day);
-    return _tasks[key] ?? [];
+    final key = _getMalaysiaDateKey(date);
+    final tasks = _tasks[key] ?? [];
+    print('Getting tasks for Malaysia date key: $key, found: ${tasks.length} tasks');
+    return tasks;
   }
 
-  // --------------------------------------------------------------------
   /// Gets tasks by priority (for LongTermTask screen)
   List<Task> getTasksByPriority(Priority priority) {
-    final today = DateTime.now();
-    final todayKey = DateTime(today.year, today.month, today.day);
+    final today = _getMalaysiaTime();
+    final todayKey = _getMalaysiaDateKey(today);
     
     return _tasks.entries
-        .where((entry) => !entry.key.isAtSameMomentAs(todayKey)) // Exclude today
+        .where((entry) => !entry.key.isAtSameMomentAs(todayKey))
         .expand((entry) => entry.value)
         .where((task) => task.priority == priority)
         .toList()
@@ -38,61 +143,215 @@ class TaskProvider with ChangeNotifier {
 
   /// Gets overdue tasks
   List<Task> get overdueTasks {
+    final now = _getMalaysiaTime();
     return _tasks.values
         .expand((taskList) => taskList)
-        .where((task) => task.isOverdue)
+        .where((task) => task.dueDate != null && 
+                        task.dueDate!.isBefore(now) && 
+                        !task.isDone)
         .toList();
   }
-  // --------------------------------------------------------------------
 
   /// Returns all tasks
   Map<DateTime, List<Task>> get allTasks => _tasks;
 
-  // --------------------------------------------------------------------
   /// Toggle task completion
-  void toggleTaskDone(Task task) {
-    task.isDone = !task.isDone;
-    notifyListeners();
+  Future<void> toggleTaskDone(Task task) async {
+    if (_userTasksCollection == null || task.firestoreId == null) return;
+
+    try {
+      // Update in Firestore
+      await _userTasksCollection!.doc(task.firestoreId).update({
+        'isDone': !task.isDone,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      
+      // Update locally
+      task.isDone = !task.isDone;
+      
+      // Update user stats
+      await _updateUserStats();
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error toggling task: $e');
+      rethrow;
+    }
   }
 
-  /// Optionally: toggle task completion
-  // void toggleTaskDone(DateTime date, Task task) {
-  //   final key = DateTime(date.year, date.month, date.day);
-  //   final taskList = _tasks[key];
-
-  //   if (taskList != null) {
-  //     final index = taskList.indexOf(task);
-  //     if (index != -1) {
-  //       taskList[index].isDone = !taskList[index].isDone;
-  //       notifyListeners();
-  //     }
-  //   }
-  // }
-  // --------------------------------------------------------------------
-
-  // --------------------------------------------------------------------
   /// Remove a task
-  void removeTask(Task task) {
-    for (var taskList in _tasks.values) {
-      if (taskList.remove(task)) {
-        notifyListeners();
-        break;
+  Future<void> removeTask(Task task) async {
+    if (_userTasksCollection == null || task.firestoreId == null) return;
+
+    try {
+      // Remove from Firestore
+      await _userTasksCollection!.doc(task.firestoreId).delete();
+      
+      // Remove from local storage
+      for (var taskList in _tasks.values) {
+        if (taskList.remove(task)) {
+          break;
+        }
       }
+      
+      // Update user stats
+      await _updateUserStats();
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error removing task: $e');
+      rethrow;
     }
   }
 
   /// Update a task
-  void updateTask(Task oldTask, Task newTask) {
-    removeTask(oldTask);
-    addTask(newTask);
+  Future<void> updateTask(Task task, {
+    String? title,
+    String? details,
+    DateTime? dueDate,
+    Priority? priority,
+  }) async {
+    if (_userTasksCollection == null || task.firestoreId == null) return;
+
+    try {
+      final updates = <String, dynamic>{
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      if (title != null) {
+        task.title = title;
+        updates['title'] = title;
+      }
+      if (details != null) {
+        task.details = details;
+        updates['details'] = details;
+      }
+      if (dueDate != null) {
+        task.dueDate = dueDate;
+        updates['dueDate'] = Timestamp.fromDate(dueDate);
+      }
+      if (priority != null) {
+        task.priority = priority;
+        updates['priority'] = priority.toString().split('.').last;
+      }
+
+      // Update in Firestore
+      await _userTasksCollection!.doc(task.firestoreId).update(updates);
+      
+      // If due date changed, reorganize local storage
+      if (dueDate != null) {
+        // Remove from old location
+        for (var taskList in _tasks.values) {
+          taskList.remove(task);
+        }
+        
+        // Add to new location
+        final key = DateTime(dueDate.year, dueDate.month, dueDate.day);
+        _tasks.putIfAbsent(key, () => []).add(task);
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      print('Error updating task: $e');
+      rethrow;
+    }
   }
 
-  /// Optionally: remove a task
-  // void removeTask(DateTime date, Task task) {
-  //   final key = DateTime(date.year, date.month, date.day);
-  //   _tasks[key]?.remove(task);
-  //   notifyListeners();
-  // }
-  // --------------------------------------------------------------------
+  /// Update user statistics in Firestore
+  Future<void> _updateUserStats() async {
+    if (_currentUserId == null) return;
 
+    try {
+      final allTasksList = _tasks.values.expand((taskList) => taskList).toList();
+      final totalTasks = allTasksList.length;
+      final completedTasks = allTasksList.where((task) => task.isDone).length;
+      final pendingTasks = totalTasks - completedTasks;
+
+      await _firestore.collection('users').doc(_currentUserId).update({
+        'tasksCount': totalTasks,
+        'completedTasksCount': completedTasks,
+        'pendingTasksCount': pendingTasks,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error updating user stats: $e');
+    }
+  }
+
+  /// Clear all tasks (useful for logout)
+  void clearTasks() {
+    _tasks.clear();
+    notifyListeners();
+  }
+
+  /// Get reference to user's task history collection
+  CollectionReference? get _userHistoryCollection {
+    if (_currentUserId == null) return null;
+    return _firestore.collection('users').doc(_currentUserId).collection('taskHistory');
+  }
+
+  /// Add task to history collection
+  Future<void> addTaskToHistory(Task task) async {
+    if (_userHistoryCollection == null) return;
+
+    try {
+      await _userHistoryCollection!.add(task.toFirestore());
+      print('Task added to history: ${task.title}');
+    } catch (e) {
+      print('Error adding task to history: $e');
+      rethrow;
+    }
+  }
+
+  /// Get all history tasks
+  Future<List<Task>> getHistoryTasks() async {
+    if (_userHistoryCollection == null) return [];
+
+    try {
+      final querySnapshot = await _userHistoryCollection!
+          .orderBy('updatedAt', descending: true)
+          .get();
+      
+      return querySnapshot.docs.map((doc) {
+        final taskData = doc.data() as Map<String, dynamic>;
+        return Task.fromFirestore(doc.id, taskData);
+      }).toList();
+    } catch (e) {
+      print('Error loading history tasks: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a task from history
+  Future<void> deleteHistoryTask(Task task) async {
+    if (_userHistoryCollection == null || task.firestoreId == null) return;
+
+    try {
+      await _userHistoryCollection!.doc(task.firestoreId).delete();
+      print('Task deleted from history: ${task.title}');
+    } catch (e) {
+      print('Error deleting history task: $e');
+      rethrow;
+    }
+  }
+
+  /// Clear all history tasks
+  Future<void> clearHistory() async {
+    if (_userHistoryCollection == null) return;
+
+    try {
+      final batch = _firestore.batch();
+      final querySnapshot = await _userHistoryCollection!.get();
+      
+      for (var doc in querySnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      
+      await batch.commit();
+      print('All history tasks cleared');
+    } catch (e) {
+      print('Error clearing history: $e');
+      rethrow;
+    }
+  }
 }
