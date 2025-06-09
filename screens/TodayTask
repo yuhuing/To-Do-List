@@ -2,31 +2,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../screens/TaskProvider.dart';
 import '../screens/HistoryPage.dart';
 import '../screens/TaskModel.dart';
+import '../screens/MidnightTaskService.dart';
 import '../widgets/AppDrawer.dart';
 
-void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (context) => TaskProvider(),
-      child: const MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: TodayTask(),
-      ),
-    );
-  }
-}
+// Remove this - main() is now in main.dart
 
 class TodayTask extends StatefulWidget {
   const TodayTask({super.key});
@@ -36,117 +19,155 @@ class TodayTask extends StatefulWidget {
 }
 
 class _TodayTaskState extends State<TodayTask> {
+  Timer? _statusTimer;
+  String _midnightStatus = '';
   final TextEditingController _taskController = TextEditingController();
   final TextEditingController _detailsController = TextEditingController();
-  late Timer _midnightTimer;
-  bool _midnightHandled = false;
 
   @override
   void initState() {
     super.initState();
-    _initializeMidnightHandling();
+    _initializeApp();
+    _startStatusMonitoring();
   }
 
+  // 🔧 添加统一的马来西亚时间方法
+  DateTime _getMalaysiaTime() {
+    return DateTime.now().toUtc().add(const Duration(hours: 8));
+  }
+
+  DateTime _getMalaysiaDateKey() {
+    final malaysiaTime = _getMalaysiaTime();
+    return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  }
+
+  // 添加状态监控方法
+  void _startStatusMonitoring() {
+    _statusTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (mounted) {
+        setState(() {
+          final timeUntilMidnight = MidnightTaskService.getTimeUntilMidnight();
+          final hours = timeUntilMidnight.inHours;
+          final minutes = timeUntilMidnight.inMinutes % 60;
+          final seconds = timeUntilMidnight.inSeconds % 60;
+          
+          _midnightStatus = 'Next midnight in: ${hours}h ${minutes}m ${seconds}s\n'
+                          'Handled today: ${MidnightTaskService.isMidnightHandled}';
+        });
+      }
+    });
+  }
+  
   @override
   void dispose() {
-    _midnightTimer.cancel();
+    _statusTimer?.cancel();
     _taskController.dispose();
     _detailsController.dispose();
     super.dispose();
   }
 
-  // Midnight handling methods
-  void _initializeMidnightHandling() {
-    _loadMidnightHandled().then((_) {
-      final now = DateTime.now().toUtc().add(const Duration(hours: 8));
-      final todayMidnight = DateTime(now.year, now.month, now.day);
-      if (now.isAfter(todayMidnight) && !_midnightHandled) {
-        _handleMidnight();
-      }
-      _scheduleMidnightCheck();
-    });
-  }
+  // Initialize app with Firebase tasks and midnight handling
+  Future<void> _initializeApp() async {
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      // Initialize tasks from Firebase
+      await taskProvider.initializeTasks();
 
-  void _scheduleMidnightCheck() {
-    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
-    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
-    final diff = nextMidnight.difference(now);
-    _midnightTimer = Timer(diff, _handleMidnight);
-  }
-
-  Future<void> _loadMidnightHandled() async {
-    final prefs = await SharedPreferences.getInstance();
-    final lastHandledDate = prefs.getString('lastHandledDate');
-    final nowDate = DateFormat('yyyy-MM-dd').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
-
-    if (lastHandledDate != nowDate) {
-      _midnightHandled = false;
-      await prefs.setString('lastHandledDate', nowDate);
-      await prefs.setBool('midnightHandled', false);
-    } else {
-      _midnightHandled = prefs.getBool('midnightHandled') ?? false;
+      // Set up real-time listener
+      await MidnightTaskService.initialize(context);
+    } catch (e) {
+      print('Error initializing app: $e');
     }
   }
 
-  void _handleMidnight() async {
-    if (_midnightHandled) return;
-
-    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final today = DateTime.now();
-    final todayTasks = taskProvider.getTasksFor(today);
-
-    for (var task in todayTasks.where((task) => !task.isDone)) {
-      taskProvider.removeTask(task);
-    }
-
-    final prefs = await SharedPreferences.getInstance();
-    final nowDate = DateFormat('yyyy-MM-dd').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
-    await prefs.setBool('midnightHandled', true);
-    await prefs.setString('lastHandledDate', nowDate);
-
-    _midnightHandled = true;
-    _scheduleMidnightCheck();
-  }
-
-  // Task operations
-  void _addTask(String title, String details) {
+  // Task operations - Updated to use async methods
+  Future<void> _addTask(String title, String details) async {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
     final task = Task(
       title: title,
       details: details,
-      dueDate: DateTime.now(),
+      dueDate: _getMalaysiaTime(),
       isDone: false,
+      priority: Priority.high, // Default priority
     );
-    taskProvider.addTask(task);
+
+    try {
+      await taskProvider.addTask(task);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error adding task: $e"),
+            backgroundColor: const Color(0xFFDE0A26),
+          ),
+        );
+      }
+    }
   }
-  
-  void _toggleTaskCompletion(Task task) {
+
+  Future<void> _toggleTaskCompletion(Task task) async {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    taskProvider.toggleTaskDone(task);
+    try {
+      await taskProvider.toggleTaskDone(task);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error updating task: $e"),
+            backgroundColor: const Color(0xFFDE0A26),
+          ),
+        );
+      }
+    }
   }
 
   void _confirmDeleteTask(Task task) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Delete Task", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.brown)),
-        content: const Text("Are you sure you want to delete this task?"),
-        actions: [
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.brown[400]),
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Cancel"),
+      builder:
+          (context) => AlertDialog(
+            title: const Text(
+              "Delete Task",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.brown,
+              ),
+            ),
+            content: const Text("Are you sure you want to delete this task?"),
+            actions: [
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: Colors.brown[400]),
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF990000),
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  try {
+                    await Provider.of<TaskProvider>(
+                      context,
+                      listen: false,
+                    ).removeTask(task);
+                    if (mounted) Navigator.of(context).pop();
+                  } catch (e) {
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text("Error deleting task: $e"),
+                          backgroundColor: const Color(0xFFDE0A26),
+                        ),
+                      );
+                    }
+                  }
+                },
+                child: const Text("Delete"),
+              ),
+            ],
           ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF990000), foregroundColor: Colors.white),
-            onPressed: () {
-              Provider.of<TaskProvider>(context, listen: false).removeTask(task);
-              Navigator.of(context).pop();
-            },
-            child: const Text("Delete"),
-          ),
-        ],
-      ),
     );
   }
 
@@ -154,7 +175,10 @@ class _TodayTaskState extends State<TodayTask> {
   bool _validateTaskTitle() {
     if (_taskController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Task title cannot be empty."), backgroundColor: Color(0xFFDE0A26)),
+        const SnackBar(
+          content: Text("Task title cannot be empty."),
+          backgroundColor: Color(0xFFDE0A26),
+        ),
       );
       return false;
     }
@@ -169,7 +193,10 @@ class _TodayTaskState extends State<TodayTask> {
   }
 
   // Common dialog container
-  Widget _buildDialogContainer({required String title, required List<Widget> children}) {
+  Widget _buildDialogContainer({
+    required String title,
+    required List<Widget> children,
+  }) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Container(
@@ -179,12 +206,25 @@ class _TodayTaskState extends State<TodayTask> {
         decoration: BoxDecoration(
           color: const Color(0xFFFFF3D9),
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(color: Colors.brown.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.brown.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.brown)),
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.brown,
+              ),
+            ),
             const SizedBox(height: 16),
             ...children,
           ],
@@ -194,19 +234,21 @@ class _TodayTaskState extends State<TodayTask> {
   }
 
   // Common dialog buttons
-  Widget _buildDialogButtons({required VoidCallback onAction, required String actionText}) {
+  Widget _buildDialogButtons({
+    required VoidCallback onAction,
+    required String actionText,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        TextButton(
-          onPressed: _clearAndClose,
-          child: const Text("Cancel"),
-        ),
+        TextButton(onPressed: _clearAndClose, child: const Text("Cancel")),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.brown,
             foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
           onPressed: onAction,
           child: Text(actionText),
@@ -218,57 +260,109 @@ class _TodayTaskState extends State<TodayTask> {
   void _showAddTaskDialog() {
     showDialog(
       context: context,
-      builder: (context) => _buildDialogContainer(
-        title: "Add Task",
-        children: [
-          _buildTextField(_taskController, "Task Title"),
-          const SizedBox(height: 12),
-          _buildDetailsField(),
-          const SizedBox(height: 20),
-          _buildDialogButtons(onAction: _handleAddTask, actionText: "Add"),
-        ],
-      ),
+      builder:
+          (context) => _buildDialogContainer(
+            title: "Add Task",
+            children: [
+              _buildTextField(_taskController, "Task Title"),
+              const SizedBox(height: 12),
+              _buildDetailsField(),
+              const SizedBox(height: 20),
+              _buildDialogButtons(onAction: _handleAddTask, actionText: "Add"),
+            ],
+          ),
     );
   }
 
   void _showEditTaskDialog(Task task) {
     _taskController.text = task.title;
     _detailsController.text = task.details;
-    
+
     showDialog(
       context: context,
-      builder: (context) => _buildDialogContainer(
-        title: "Edit Task",
-        children: [
-          _buildTextField(_taskController, "Task Title"),
-          const SizedBox(height: 12),
-          _buildDetailsField(),
-          const SizedBox(height: 20),
-          _buildDialogButtons(onAction: () => _handleEditTask(task), actionText: "Update"),
-        ],
-      ),
+      builder:
+          (context) => _buildDialogContainer(
+            title: "Edit Task",
+            children: [
+              _buildTextField(_taskController, "Task Title"),
+              const SizedBox(height: 12),
+              _buildDetailsField(),
+              const SizedBox(height: 20),
+              _buildDialogButtons(
+                onAction: () => _handleEditTask(task),
+                actionText: "Update",
+              ),
+            ],
+          ),
     );
   }
 
-  void _handleAddTask() {
+  void _handleAddTask() async {
     if (!_validateTaskTitle()) return;
-    _addTask(_taskController.text.trim(), _detailsController.text.trim());
-    _clearAndClose();
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      await _addTask(
+        _taskController.text.trim(),
+        _detailsController.text.trim(),
+      );
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        _clearAndClose(); // Close add task dialog
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error adding task: $e"),
+            backgroundColor: const Color(0xFFDE0A26),
+          ),
+        );
+      }
+    }
   }
 
-  void _handleEditTask(Task task) {
+  void _handleEditTask(Task task) async {
     if (!_validateTaskTitle()) return;
-    
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final updatedTask = Task(
-      title: _taskController.text.trim(),
-      details: _detailsController.text.trim(),
-      dueDate: task.dueDate,
-      isDone: task.isDone,
-    );
-    
-    taskProvider.updateTask(task, updatedTask);
-    _clearAndClose();
+
+    try {
+      await taskProvider.updateTask(
+        task,
+        title: _taskController.text.trim(),
+        details: _detailsController.text.trim(),
+      );
+
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        _clearAndClose(); // Close edit dialog
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Error updating task: $e"),
+            backgroundColor: const Color(0xFFDE0A26),
+          ),
+        );
+      }
+    }
   }
 
   // UI Builders
@@ -279,8 +373,14 @@ class _TodayTaskState extends State<TodayTask> {
         labelText: label,
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none,
+        ),
       ),
     );
   }
@@ -288,7 +388,10 @@ class _TodayTaskState extends State<TodayTask> {
   Widget _buildDetailsField() {
     return Container(
       height: 120,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(15)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+      ),
       child: Scrollbar(
         child: SingleChildScrollView(
           child: TextField(
@@ -297,7 +400,10 @@ class _TodayTaskState extends State<TodayTask> {
             keyboardType: TextInputType.multiline,
             decoration: const InputDecoration(
               hintText: "Details",
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding: EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
               border: InputBorder.none,
             ),
           ),
@@ -323,7 +429,7 @@ class _TodayTaskState extends State<TodayTask> {
             color: Colors.brown[900],
           ),
         ),
-        subtitle: Text(task.details),
+        subtitle: task.details.isNotEmpty ? Text(task.details) : null,
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -353,13 +459,21 @@ class _TodayTaskState extends State<TodayTask> {
   Widget _buildTasksList() {
     return Consumer<TaskProvider>(
       builder: (context, taskProvider, child) {
-        final todayTasks = taskProvider.getTasksFor(DateTime.now());
+        // Show loading indicator while tasks are being loaded
+        if (taskProvider.isLoading) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final todayTasks = taskProvider.getTasksFor(_getMalaysiaDateKey());
 
         if (todayTasks.isEmpty) {
           return const Center(
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
-              child: Text("No tasks for today", style: TextStyle(fontSize: 16, color: Colors.grey)),
+              child: Text(
+                "No tasks for today",
+                style: TextStyle(fontSize: 16, color: Colors.grey),
+              ),
             ),
           );
         }
@@ -374,7 +488,9 @@ class _TodayTaskState extends State<TodayTask> {
 
   @override
   Widget build(BuildContext context) {
-    final todayDate = DateFormat('dd/MM/yyyy').format(DateTime.now().toUtc().add(const Duration(hours: 8)));
+    final todayDate = DateFormat(
+      'dd/MM/yyyy',
+    ).format(_getMalaysiaTime());
 
     return Scaffold(
       appBar: AppBar(
@@ -390,16 +506,63 @@ class _TodayTaskState extends State<TodayTask> {
             child: Column(
               children: [
                 const Center(
-                  child: Text("Today's Task", style: TextStyle(fontSize: 30, fontWeight: FontWeight.bold, color: Colors.brown)),
+                  child: Text(
+                    "Today's Task",
+                    style: TextStyle(
+                      fontSize: 30,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.brown,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 40),
+
+                // time setting
+                if (_midnightStatus.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        _midnightStatus,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+
+                      Text(
+                        'Malaysia Time: ${_getMalaysiaTime().toString()}',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.green,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 30),
+                
                 SizedBox(
                   height: MediaQuery.of(context).size.height * 0.6,
                   child: Container(
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFF3D9),
                       borderRadius: BorderRadius.circular(30),
-                      boxShadow: [BoxShadow(color: Colors.brown.withOpacity(0.2), blurRadius: 10, offset: const Offset(0, 4))],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.brown.withOpacity(0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
                     padding: const EdgeInsets.all(20),
                     child: Column(
@@ -407,7 +570,13 @@ class _TodayTaskState extends State<TodayTask> {
                       children: [
                         Align(
                           alignment: Alignment.topRight,
-                          child: Text("Date: $todayDate", style: const TextStyle(fontSize: 14, color: Colors.brown)),
+                          child: Text(
+                            "Date: $todayDate",
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.brown,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 10),
                         Expanded(child: _buildTasksList()),
@@ -424,7 +593,11 @@ class _TodayTaskState extends State<TodayTask> {
             child: IconButton(
               icon: const Icon(Icons.history, color: Colors.brown),
               tooltip: "View History",
-              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => HistoryPage(tasks: []))),
+              onPressed:
+                  () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => HistoryPage()),
+                  ),
             ),
           ),
         ],
