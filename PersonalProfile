@@ -3,12 +3,11 @@ import 'package:provider/provider.dart';
 //import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'TaskModel.dart';
-import 'AppDrawer.dart';
+import '../widget/AppDrawer.dart';
 import 'TaskProvider.dart';
 
 class PersonalProfile extends StatelessWidget {
-  final String username;
-  const PersonalProfile({super.key, required this.username});
+  const PersonalProfile({super.key});
 
   // /// Counts how many tasks are marked done today
   // int getCompletedTaskCount() {
@@ -62,6 +61,7 @@ class PersonalProfile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    //final taskProvider = context.watch<TaskProvider>();
     final taskProvider = Provider.of<TaskProvider>(context);
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
@@ -112,15 +112,9 @@ class PersonalProfile extends StatelessWidget {
                 radius: 45,
                 backgroundColor: Colors.brown[200],
                 child: Text(
-                  username.isNotEmpty ? username[0].toUpperCase() : '?',
+                  '?',
                   style: const TextStyle(fontSize: 40, color: Colors.white),
                 ),
-              ),
-
-              const SizedBox(height: 10),
-              Text(
-                username,
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: Colors.brown),
               ),
 
               const SizedBox(height: 30),
@@ -155,7 +149,9 @@ class PersonalProfile extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+
                       const SizedBox(height: 20),
+
                       // The line graph itself
                       Expanded(
                         child: LineChart(
