@@ -1,8 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'AppDrawer.dart';
+import '../widget/AppDrawer.dart';
 import 'TaskProvider.dart'; // 👈 import your provider
+
+// ======= COLOR CONSTANTS (MOVED OUTSIDE CLASS) =======
+// Rich coffee color palette
+const Color espresso = Color(0xFF2C1810);
+const Color coffeeBrown = Color(0xFF4A2C2A);
+const Color caramelBrown = Color(0xFF8B5A2B);
+const Color creamWhite = Color(0xFFFAF7F2);
+const Color milkFoam = Color(0xFFF5F2ED);
+const Color cardBg = Color(0xFFFFFFFF);
+const Color coffeeShadow = Color(0x1A2C1810);
 
 void main() {
   runApp(
@@ -37,6 +47,32 @@ class _CalendarPageState extends State<CalendarPage> {
   DateTime _focusedDay = DateTime.now(); // ✅ Always shows current month/day
   DateTime? _selectedDay; // the day user taps on
 
+  // Method to check if a day should have a star sticker
+  bool _shouldShowStar(DateTime date) {
+    final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+    final tasksForDate = taskProvider.getTasksFor(date);
+    
+    // Condition 3: No tasks at all = no sticker
+    if (tasksForDate.isEmpty) {
+      return false;
+    }
+    
+    final completedTasks = tasksForDate.where((task) => task.isDone).toList();
+    final pendingTasks = tasksForDate.where((task) => !task.isDone).toList();
+    
+    // Condition 1: Has pending tasks = no sticker
+    if (pendingTasks.isNotEmpty) {
+      return false;
+    }
+    
+    // Condition 2: No pending tasks AND has completed tasks = show star
+    if (pendingTasks.isEmpty && completedTasks.isNotEmpty) {
+      return true;
+    }
+    
+    return false;
+  }
+
   // Build method (UI layout)
   @override
   Widget build(BuildContext context) {
@@ -52,166 +88,192 @@ class _CalendarPageState extends State<CalendarPage> {
       body: Column(
         children: [
           // calendar widget
-          TableCalendar(
-            firstDay: DateTime.utc(2025, 1, 1),
-            lastDay: DateTime.utc(2025, 12, 31),
-            focusedDay:
-                _focusedDay, // the month that shown on the screen that mentioned before
-            calendarFormat: CalendarFormat.month,
-            availableCalendarFormats: const {CalendarFormat.month: 'Month'},
-            calendarStyle: CalendarStyle(
-              todayDecoration: BoxDecoration(
-                color: Colors.orangeAccent,
-                shape: BoxShape.circle,
-              ),
-              selectedDecoration: BoxDecoration(
-                color: Colors.brown,
-                shape: BoxShape.circle,
-              ),
-              markerDecoration: BoxDecoration(shape: BoxShape.circle),
-              weekendTextStyle: TextStyle(color: Colors.grey.shade700),
-            ),
-            selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-
-            // 1. Updates _delectedday and _focusedDay
-            // 2. opens bottom sheet if tasks exist on that date
-            onDaySelected: (selected, focused) {
-              final normalized = _stripTime(selected);
-
-              setState(() {
-                _selectedDay = selected;
-                _focusedDay = focused;
-              });
-
-              if (Provider.of<TaskProvider>(
-                context,
-                listen: false,
-              ).getTasksFor(normalized).isNotEmpty) {
-                showModalBottomSheet(
-                  context: context,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
+          Consumer<TaskProvider>(
+            builder: (context, taskProvider, child) {
+              return TableCalendar(
+                firstDay: DateTime.utc(2020, 1, 1),
+                lastDay: DateTime.utc(2030, 12, 31),
+                focusedDay: _focusedDay,
+                calendarFormat: CalendarFormat.month,
+                availableCalendarFormats: const {CalendarFormat.month: 'Month'},
+                calendarStyle: CalendarStyle(
+                  todayDecoration: BoxDecoration(
+                    color: Colors.orangeAccent,
+                    shape: BoxShape.circle,
                   ),
-                  builder: (context) => _buildTaskList(normalized),
-                );
-              }
-            },
+                  selectedDecoration: BoxDecoration(
+                    color: Colors.brown,
+                    shape: BoxShape.circle,
+                  ),
+                  markerDecoration: BoxDecoration(shape: BoxShape.circle),
+                  weekendTextStyle: TextStyle(color: Colors.grey.shade700),
+                ),
+                selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
 
-            // Calendar builders
-            calendarBuilders: CalendarBuilders(
-              markerBuilder: (context, date, events) {
-                final normalizedDate = _stripTime(date);
-                final taskProvider = Provider.of<TaskProvider>(context);
-                final tasksForDate = taskProvider.getTasksFor(normalizedDate);
+                // 1. Updates _selectedday and _focusedDay
+                // 2. opens bottom sheet if tasks exist on that date
+                onDaySelected: (selected, focused) {
+                  final normalized = _stripTime(selected);
 
-                if (tasksForDate.isEmpty) return const SizedBox.shrink();
+                  setState(() {
+                    _selectedDay = selected;
+                    _focusedDay = focused;
+                  });
 
-                final now = DateTime.now();
-                final daysLeft =
-                    normalizedDate.difference(_stripTime(now)).inDays;
+                  if (taskProvider.getTasksFor(normalized).isNotEmpty) {
+                    showModalBottomSheet(
+                      context: context,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
+                      ),
+                      builder: (context) => _buildTaskList(normalized),
+                    );
+                  }
+                },
 
-                List<Color> colors =
-                    tasksForDate.map((task) {
-                      if (daysLeft <= 3) {
-                        return Colors.red;
-                      } else if (daysLeft <= 7) {
-                        return Colors.yellow;
-                      } else {
-                        return Colors.green;
-                      }
-                    }).toList();
+                // Calendar builders with star sticker logic
+                calendarBuilders: CalendarBuilders(
+                  markerBuilder: (context, date, events) {
+                    final normalizedDate = _stripTime(date);
+                    final tasksForDate = taskProvider.getTasksFor(normalizedDate);
 
-                return Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 2,
-                  children:
-                      colors.take(3).map((color) {
-                        return Container(
-                          width: 8,
-                          height: 8,
-                          margin: const EdgeInsets.symmetric(vertical: 1),
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
+                    List<Widget> markers = [];
+
+                    // Add star sticker if conditions are met
+                    if (_shouldShowStar(normalizedDate)) {
+                      markers.add(
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            child: Icon(
+                              Icons.star,
+                              color: Colors.amber,
+                              size: 16,
+                            ),
                           ),
-                        );
-                      }).toList(),
-                );
-              },
-            ),
+                        ),
+                      );
+                    }
+
+                    // Add task priority dots (existing logic)
+                    if (tasksForDate.isNotEmpty) {
+                      final now = DateTime.now();
+                      final daysLeft = normalizedDate.difference(_stripTime(now)).inDays;
+
+                      List<Color> colors = tasksForDate.map((task) {
+                        if (daysLeft <= 3) {
+                          return Colors.red;
+                        } else if (daysLeft <= 7) {
+                          return Colors.yellow;
+                        } else {
+                          return Colors.green;
+                        }
+                      }).toList();
+
+                      markers.add(
+                        Positioned(
+                          bottom: 2,
+                          left: 0,
+                          right: 0,
+                          child: Wrap(
+                            alignment: WrapAlignment.center,
+                            spacing: 2,
+                            children: colors.take(3).map((color) {
+                              return Container(
+                                width: 6,
+                                height: 6,
+                                margin: const EdgeInsets.symmetric(vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (markers.isEmpty) return const SizedBox.shrink();
+
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: markers,
+                    );
+                  },
+                ),
+              );
+            },
           ),
           const Spacer(),
         ],
       ),
-      // bottomNavigationBar: Container(
-      //   height: 70,
-      //   decoration: const BoxDecoration(
-      //     color: Color(0xFFEADDC8), // Soft beige
-      //     borderRadius: BorderRadius.only(
-      //       topLeft: Radius.circular(20),
-      //       topRight: Radius.circular(20),
-      //     ),
-      //   ),
-      //   child: Row(
-      //     mainAxisAlignment: MainAxisAlignment.spaceAround,
-      //     children: [
-      //       IconButton(
-      //         icon: const Icon(Icons.today),
-      //         onPressed: () {}, // Today’s Task
-      //       ),
-      //       IconButton(
-      //         icon: const Icon(Icons.access_time),
-      //         onPressed: () {}, // Long-term Tasks
-      //       ),
-      //       Container(
-      //         height: 60,
-      //         width: 60,
-      //         decoration: BoxDecoration(
-      //           color: Color(0xFF6F4E37), // Brown center button
-      //           shape: BoxShape.circle,
-      //         ),
-      //         child: IconButton(
-      //           icon: const Icon(Icons.calendar_month, color: Colors.white),
-      //           onPressed: () {}, // Calendar
-      //         ),
-      //       ),
-      //       IconButton(
-      //         icon: const Icon(Icons.groups),
-      //         onPressed: () {}, // Group Collaboration
-      //       ),
-      //       IconButton(
-      //         icon: const Icon(Icons.person),
-      //         onPressed: () {}, // Profile
-      //       ),
-      //     ],
-      //   ),
-      // ),
     );
   }
 
   // Task List Modal Sheet
   Widget _buildTaskList(DateTime day) {
     final tasks = Provider.of<TaskProvider>(context).getTasksFor(day);
+    final completedTasks = tasks.where((task) => task.isDone).length;
+    final totalTasks = tasks.length;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Row(
+            children: [
+              Text(
+                '${day.day}/${day.month}/${day.year}',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              // Show star in modal if all conditions are met
+              if (_shouldShowStar(day))
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.star, color: Colors.amber, size: 16),
+                      const SizedBox(width: 4),
+                      Text('All Done!', style: TextStyle(color: Colors.amber[800], fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
           Text(
-            '${day.day}',
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+            'Tasks: $completedTasks/$totalTasks completed',
+            style: TextStyle(color: Colors.grey[600]),
           ),
           const SizedBox(height: 10),
           ...tasks.map(
             (task) => Card(
-              color: Colors.green.shade100,
+              color: task.isDone ? Colors.green.shade100 : Colors.orange.shade50,
               child: ListTile(
-                title: Text(task.title),
-                trailing: const Icon(Icons.check_box_outline_blank),
-                subtitle: const Text('Details...'),
+                title: Text(
+                  task.title,
+                  style: TextStyle(
+                    decoration: task.isDone ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                trailing: Icon(
+                  task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: task.isDone ? Colors.green : Colors.orange,
+                ),
+                subtitle: Text(task.details.isEmpty ? 'No details' : task.details),
               ),
             ),
           ),
