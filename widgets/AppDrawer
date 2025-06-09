@@ -1,0 +1,203 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:myapp/screens/TodayTask.dart';
+import 'package:myapp/screens/LongTerm.dart';
+import 'package:myapp/screens/Calendar.dart';
+import 'package:myapp/screens/GroupCollaborationPage.dart';
+import 'package:myapp/screens/PersonalProfile.dart';
+import 'package:myapp/auth/login_screen.dart';
+
+class AppDrawer extends StatelessWidget {
+  const AppDrawer({super.key});
+  // ------------------------------------------------------------------------------
+  // Sign out function
+  Future<void> _signOut(BuildContext context) async {
+    try {
+      // Show loading dialog
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (BuildContext context) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.brown),
+          );
+        },
+      );
+
+      // Sign out from Firebase
+      await FirebaseAuth.instance.signOut();
+
+      // Close loading dialog and navigate to login screen
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (Route<dynamic> route) => false, // Remove all previous routes
+        );
+      }
+    } catch (e) {
+      // Close loading dialog if it's open
+      if (context.mounted) {
+        Navigator.of(context).pop();
+        
+        // Show error message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error signing out: $e'),
+            backgroundColor: const Color(0xFFB71C1C),
+          ),
+        );
+      }
+    }
+  }
+
+  // Confirmation dialog for sign out
+  void _showSignOutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            'Sign Out',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.brown,
+            ),
+          ),
+          content: const Text('Are you sure you want to sign out?'),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.brown[400],
+              ),
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF990000),
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () {
+                Navigator.of(context).pop(); // Close dialog
+                _signOut(context); // Sign out
+              },
+              child: const Text('Sign Out'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+  // --------------------------------------------------------------------------
+  @override
+  Widget build(BuildContext context) {
+  // --------------------------------------------------------------------------
+    // Get current user info for display
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    return Drawer(
+      child: Column(
+        children: [
+          // Enhanced drawer header with user info
+          UserAccountsDrawerHeader(
+            decoration: const BoxDecoration(color: Colors.brown),
+            accountName: const Text("Café Checklist"),
+            accountEmail: Text(currentUser?.email ?? 'No user'),
+            currentAccountPicture: const Icon(Icons.coffee, color: Colors.white, size: 60),
+          ),
+  // --------------------------------------------------------------------------
+          // Menu items (got change a bit)
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.today, color: Colors.brown),
+                  title: const Text("Today's Tasks"),
+                  onTap: () {
+                    Navigator.pop(context); // Close drawer first
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TodayTask(),
+                      ),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.flag, color: Colors.brown),
+                  title: const Text("Long-Term Task"),
+                  onTap: () {
+                    Navigator.pop(context); // Close drawer first
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LongTermTask(),
+                      ),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.calendar_month, color: Colors.brown),
+                  title: const Text('Calendar'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => CalendarPage()),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.group, color: Colors.brown),
+                  title: const Text('Group Tasks'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (_) => GroupCollaborationPage()),
+                    );
+                  },
+                ),
+
+                ListTile(
+                  leading: const Icon(Icons.person, color: Colors.brown),
+                  title: const Text('My Profile'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const PersonalProfile(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+// ----------------------------------------------------------------------------------------
+          // Sign out section at the bottom
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.red),
+            title: const Text(
+              'Sign Out',
+              style: TextStyle(color: Colors.red),
+            ),
+            onTap: () {
+              Navigator.pop(context); // Close drawer first
+              _showSignOutDialog(context); // Show confirmation dialog
+            },
+          ),
+          const SizedBox(height: 16), // Add some bottom padding
+// ----------------------------------------------------------------------------------------
+        ],
+      ),
+    );
+  }
+}
