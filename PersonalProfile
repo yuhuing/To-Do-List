@@ -1,60 +1,420 @@
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:myapp/ToDoList/auth/login_screen.dart';
 import 'package:provider/provider.dart';
-import 'ToDoList/screen/TodayTask.dart';
-import 'ToDoList/screen/LongTerm.dart';
-import 'ToDoList/screen/Calendar.dart';
-import 'ToDoList/screen/PersonalProfile.dart';
-import 'ToDoList/screen/TaskProvider.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'TaskModel.dart';
+import '../widget/AppDrawer.dart';
+import 'TaskProvider.dart';
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+class PersonalProfile extends StatelessWidget {
+  const PersonalProfile({super.key});
 
-  if (kIsWeb) {
-    await Firebase.initializeApp(
-      options: FirebaseOptions(
-        apiKey: "AIzaSyC0IvQyNjpVr1G2EAd8Ua5Z4wcrUY6DA2E",
-        authDomain: "cafechecklist3.firebaseapp.com",
-        databaseURL: "https://cafechecklist3-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "cafechecklist3",
-        storageBucket: "cafechecklist3.firebasestorage.app",
-        messagingSenderId: "238182649434",
-        appId: "1:238182649434:web:f85346d1ed66612b7bd263",
-        measurementId: "G-0HCFQ5R4YY"
-      ),
-    );
-  } else {
-    await Firebase.initializeApp();
+  // Color constants matching the pattern
+  static const Color espresso = Color(0xFF2C1810);
+  static const Color coffeeBrown = Color(0xFF4A2C2A);
+  static const Color caramelBrown = Color(0xFF8B5A2B);
+  static const Color creamWhite = Color(0xFFFAF7F2);
+  static const Color milkFoam = Color(0xFFF5F2ED);
+  static const Color cardBg = Color(0xFFFFFFFF);
+  static const Color coffeeShadow = Color(0x1A2C1810);
+
+  /// Calculates the fraction of tasks done this week
+  double getWeeklyCompletionRate(Map<DateTime, List<Task>> allTasks) {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+
+    final weeklyTasks = allTasks.entries
+        .where((entry) => !entry.key.isBefore(DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)))
+        .expand((entry) => entry.value)
+        .toList();
+
+    if (weeklyTasks.isEmpty) return 0.0;
+
+    final completed = weeklyTasks.where((task) => task.isDone).length;
+    return completed / weeklyTasks.length;
   }
 
-  runApp(const MyApp());
-}
+  /// Builds the data points for the 7‑day line graph
+  List<FlSpot> getWeeklyGraphData(Map<DateTime, List<Task>> allTasks) {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+    // Initialize a map from day index (0=Mon..6=Sun) to list of tasks
+    Map<int, List<Task>> dailyMap = {for (var i = 0; i < 7; i++) i: []};
+
+    for (var entry in allTasks.entries) {
+      final diff = entry.key.difference(DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)).inDays;
+      if (diff >= 0 && diff < 7) {
+        dailyMap[diff]!.addAll(entry.value);
+      }
+    }
+
+    // For each day, compute percent done and return an FlSpot(x, y)
+    return dailyMap.entries.map((e) {
+      final total = e.value.length;
+      final done = e.value.where((t) => t.isDone).length;
+      final percent = total > 0 ? (done / total) * 100 : 0.0;
+      return FlSpot(e.key.toDouble(), percent);
+    }).toList();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => TaskProvider()),
-      ],
-      child: MaterialApp(
-        title: 'To-Do List App',
-        debugShowCheckedModeBanner: false,
-        home: const LoginScreen(), // or some home screen using AppDrawer
-        routes: {
-          '/today': (context) => TodayTask(),
-          '/longterm': (context) => LongTermTask(),
-          '/calendar': (context) => CalendarPage(),
-          '/profile': (context) => PersonalProfile(),
-          // Add others as needed
-        },
+    final taskProvider = Provider.of<TaskProvider>(context);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final todayTasks = taskProvider.getTasksFor(today);
+    final allTasks = taskProvider.allTasks;
+
+    final completed = todayTasks.where((t) => t.isDone).length;
+    final remaining = todayTasks.where((t) => !t.isDone).length;
+    final weeklyPercentage = (getWeeklyCompletionRate(allTasks) * 100).toStringAsFixed(1);
+    final graphData = getWeeklyGraphData(allTasks);
+
+    return Scaffold(
+      drawer: const AppDrawer(),
+      backgroundColor: creamWhite,
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.person, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "Personal Profile",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: espresso,
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [espresso, coffeeBrown],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
       ),
-      
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              // Top Row - Profile and Stats
+              Row(
+                children: [
+                  // Profile Avatar Section
+                  Expanded(
+                    flex: 2,
+                    child: Container(
+                      height: 160,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: coffeeShadow,
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          CircleAvatar(
+                            radius: 35,
+                            backgroundColor: caramelBrown.withOpacity(0.2),
+                            child: Icon(
+                              Icons.person,
+                              size: 40,
+                              color: caramelBrown,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            "Welcome Back!",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: espresso,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 12),
+                  
+                  // Today's Tasks Stats
+                  Expanded(
+                    flex: 3,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatCard("Completed", "$completed", Colors.green),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStatCard("Pending", "$remaining", Colors.red),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 16),
+
+              // Combined Weekly Progress Chart and Stats
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: cardBg,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: coffeeShadow,
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header with title and percentage
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Weekly Progress",
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: espresso,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: caramelBrown.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: caramelBrown.withOpacity(0.3),
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  "$weeklyPercentage%",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: caramelBrown,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  "avg",
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: coffeeBrown,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Chart
+                      Expanded(
+                        child: LineChart(
+                          LineChartData(
+                            minX: 0,
+                            maxX: 6,
+                            minY: 0,
+                            maxY: 100,
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: 25,
+                              getDrawingHorizontalLine: (value) {
+                                return FlLine(
+                                  color: Colors.grey.withOpacity(0.2),
+                                  strokeWidth: 1,
+                                );
+                              },
+                            ),
+                            titlesData: FlTitlesData(
+                              rightTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false),
+                              ),
+                              topTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 30,
+                                  interval: 1,
+                                  getTitlesWidget: (value, meta) {
+                                    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+                                    if (value.toInt() >= 0 && value.toInt() < days.length) {
+                                      return Padding(
+                                        padding: const EdgeInsets.only(top: 6.0),
+                                        child: Text(
+                                          days[value.toInt()],
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: coffeeBrown,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                    return const Text('');
+                                  },
+                                ),
+                              ),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 40,
+                                  interval: 25,
+                                  getTitlesWidget: (value, meta) {
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 6.0),
+                                      child: Text(
+                                        '${value.toInt()}%',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: coffeeBrown,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            borderData: FlBorderData(
+                              show: true,
+                              border: Border(
+                                bottom: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                                left: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                              ),
+                            ),
+                            lineBarsData: [
+                              LineChartBarData(
+                                spots: graphData,
+                                isCurved: true,
+                                color: caramelBrown,
+                                barWidth: 3,
+                                dotData: FlDotData(
+                                  show: true,
+                                  getDotPainter: (spot, percent, barData, index) {
+                                    return FlDotCirclePainter(
+                                      radius: 4,
+                                      color: caramelBrown,
+                                      strokeWidth: 2,
+                                      strokeColor: Colors.white,
+                                    );
+                                  },
+                                ),
+                                belowBarData: BarAreaData(
+                                  show: true,
+                                  color: caramelBrown.withOpacity(0.1),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      
+                      // Bottom encouragement text
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Text(
+                          "Keep up the great work!",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: coffeeBrown,
+                            fontStyle: FontStyle.italic,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    
+  }
+
+  /// Helper widget to build a stat card
+  Widget _buildStatCard(String title, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: coffeeShadow,
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: coffeeBrown,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
