@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-// import 'package:myapp/widgets/AppDrawer.dart';
 import '../auth/login_screen.dart';
 import '../screens/TodayTask.dart';
 import '../screens/LongTerm.dart';
@@ -15,10 +14,10 @@ import '../screens/TaskProvider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  
   if (kIsWeb) {
     await Firebase.initializeApp(
-      options: FirebaseOptions(
+      options: const FirebaseOptions(
         apiKey: "AIzaSyC0IvQyNjpVr1G2EAd8Ua5Z4wcrUY6DA2E",
         authDomain: "cafechecklist3.firebaseapp.com",
         projectId: "cafechecklist3",
@@ -31,7 +30,10 @@ Future<void> main() async {
   } else {
     await Firebase.initializeApp();
   }
-
+  
+  // UNCOMMENT THE LINE BELOW TO FORCE LOGOUT ON APP START (for testing)
+  // await FirebaseAuth.instance.signOut();
+  
   runApp(const MyApp());
 }
 
@@ -47,19 +49,65 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'To-Do List App',
         debugShowCheckedModeBanner: false,
-        home: const LoginScreen(), // or some home screen using AppDrawer
+        // OPTION 1: Use AuthWrapper (recommended for production)
+        home: const AuthWrapper(),
+        
+        // OPTION 2: Always show LoginScreen (uncomment line below and comment line above)
+        // home: const LoginScreen(),
+        
         routes: {
+          '/login': (context) => LoginScreen(),
           '/today': (context) => TodayTask(),
           '/longterm': (context) => LongTermTask(),
           '/calendar': (context) => CalendarPage(),
           '/profile': (context) => PersonalProfile(),
-          // Add others as needed
         },
       ),
-      
     );
-    
   }
 }
 
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
 
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        // Show loading while checking auth state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            backgroundColor: Color(0xFFFFF3D9),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.brown),
+                  SizedBox(height: 16),
+                  Text(
+                    'Loading...',
+                    style: TextStyle(
+                      color: Colors.brown,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        
+        // If user is logged in, show TodayTask (main app)
+        if (snapshot.hasData && snapshot.data != null) {
+          print('User is logged in: ${snapshot.data!.email}');
+          return const TodayTask();
+        }
+        
+        // If not logged in, show LoginScreen
+        print('User is not logged in, showing LoginScreen');
+        return const LoginScreen();
+      },
+    );
+  }
+}
