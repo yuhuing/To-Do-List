@@ -6,7 +6,7 @@ import '../screens/TaskModel.dart';
 class TaskProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  
+
   final Map<DateTime, List<Task>> _tasks = {};
   bool _isLoading = false;
 
@@ -18,30 +18,41 @@ class TaskProvider with ChangeNotifier {
   // Get reference to user's tasks collection(create task subcollection)
   CollectionReference? get _userTasksCollection {
     if (_currentUserId == null) return null;
-    return _firestore.collection('users').doc(_currentUserId).collection('tasks');
+    return _firestore
+        .collection('users')
+        .doc(_currentUserId)
+        .collection('tasks');
   }
 
   // Expose userTasksCollection for direct StreamBuilder usage in UI
   CollectionReference? get userTasksCollection => _userTasksCollection;
 
-
   // 统一的马来西亚时间获取
   DateTime _getMalaysiaTime() {
     return DateTime.now().toUtc().add(const Duration(hours: 8));
   }
-  
+
   // 统一的日期键值生成
   DateTime _getMalaysiaDateKey(DateTime date) {
     final malaysiaTime = date.toUtc().add(const Duration(hours: 8));
+    final result = DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+    print('Converting date: $date -> Malaysia time: $malaysiaTime -> Key: $result');
+    return result;
+  }
+
+  // 🔧 FIXED: Helper method to create date-only DateTime for due dates
+  DateTime _createMalaysiaDateOnly(DateTime date) {
+    final malaysiaTime = date.toUtc().add(const Duration(hours: 8));
+    // Return date at midnight Malaysia time
     return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
   }
 
   /// Initialize and load tasks from Firestore
   Future<void> initializeTasks() async {
     if (_currentUserId == null) return;
-    
-    if (_isLoading) return; // 防止重复初始化
-    
+
+    if (_isLoading) return; // Prevent duplicate initialization
+
     _isLoading = true;
     // 使用 addPostFrameCallback 确保在构建完成后再通知
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -72,10 +83,13 @@ class TaskProvider with ChangeNotifier {
       for (var doc in querySnapshot.docs) {
         final taskData = doc.data() as Map<String, dynamic>;
         final task = Task.fromFirestore(doc.id, taskData);
-        
+
         if (task.dueDate != null) {
           final key = _getMalaysiaDateKey(task.dueDate!);
           _tasks.putIfAbsent(key, () => []).add(task);
+          print(
+            'Loaded task: ${task.title}, dueDate: ${task.dueDate}, key: $key',
+          ); // debug
         }
       }
     } catch (e) {
@@ -87,68 +101,115 @@ class TaskProvider with ChangeNotifier {
   /// Adds a task to Firestore and local storage
   Future<void> addTask(Task task) async {
     if (_userTasksCollection == null) return;
-    
-    // 确保使用相同的日期键值生成方式
-    final dateKey = _getMalaysiaDateKey(task.dueDate!);
-    
-    if (_tasks[dateKey] == null) {
-      _tasks[dateKey] = [];
-    }
-    _tasks[dateKey]!.add(task);
-    
+
     try {
+      // Then add to local storage with the correct date key
+      if (task.dueDate != null) {
+        task.dueDate = _createMalaysiaDateOnly(task.dueDate!);
+      }
+
+      print('Adding task: ${task.title}, dueDate: ${task.dueDate}'); // debug
+
       // Add to Firestore
       final docRef = await _userTasksCollection!.add(task.toFirestore());
-      
+
       // Update task with Firestore ID
       task.firestoreId = docRef.id;
-      
-      // Add to local storage
+
+      // Add to local storage with the correct date key
       if (task.dueDate != null) {
         final key = _getMalaysiaDateKey(task.dueDate!);
         _tasks.putIfAbsent(key, () => []).add(task);
+        print(
+          'Task added to local storage with key: $key, tasks for this date: ${_tasks[key]?.length}',
+        ); // debug
       }
-      
+
       // Update user stats
       await _updateUserStats();
-      
+
       notifyListeners();
+      print('TaskProvider notified listeners after adding task');
     } catch (e) {
       print('Error adding task: $e');
       rethrow;
     }
   }
 
-  
   List<Task> getTasksFor(DateTime date) {
     final key = _getMalaysiaDateKey(date);
     final tasks = _tasks[key] ?? [];
-    print('Getting tasks for Malaysia date key: $key, found: ${tasks.length} tasks');
+    print(
+      'Getting tasks for date: $date, key: $key, found: ${tasks.length} tasks',
+    );
+    // Debug: Print all available date keys
+    print('Available date keys: ${_tasks.keys.toList()}');
     return tasks;
   }
 
-  /// Gets tasks by priority (for LongTermTask screen)
-  List<Task> getTasksByPriority(Priority priority) {
-    final today = _getMalaysiaTime();
-    final todayKey = _getMalaysiaDateKey(today);
+/// Gets tasks by priority (for LongTermTask screen)
+List<Task> getTasksByPriority(Priority priority) {
+  final today = _getMalaysiaTime();
+  final todayKey = _getMalaysiaDateKey(today);
+
+  print('=== Getting tasks by priority: $priority ===');
+  print('Today Malaysia time: $today');
+  print('Today key: $todayKey');
+  print('All available task dates: ${_tasks.keys.toList()}');
+
+  // Get all tasks that are NOT for today (include both past and future tasks)
+  final filteredTasks = <Task>[];
+
+  for (var entry in _tasks.entries) {
+    final taskDate = entry.key;
+    final isToday = _isSameDay(taskDate, todayKey);
     
-    return _tasks.entries
-        .where((entry) => !entry.key.isAtSameMomentAs(todayKey))
-        .expand((entry) => entry.value)
-        .where((task) => task.priority == priority)
-        .toList()
-      ..sort((a, b) => (a.dueDate ?? DateTime.now())
-          .compareTo(b.dueDate ?? DateTime.now()));
+    print('Checking date: $taskDate, isToday: $isToday');
+    print('Task date components: ${taskDate.year}-${taskDate.month.toString().padLeft(2, '0')}-${taskDate.day.toString().padLeft(2, '0')}');
+    print('Today key components: ${todayKey.year}-${todayKey.month.toString().padLeft(2, '0')}-${todayKey.day.toString().padLeft(2, '0')}');
+    
+    if (!isToday) {  // Include both past (overdue) and future tasks, but exclude today's tasks
+      for (var task in entry.value) {
+        print('Task: ${task.title}, Priority: ${task.priority}, Target: $priority, Due: ${task.dueDate}');
+        if (task.priority == priority) {
+          filteredTasks.add(task);
+          print('✓ Added task: ${task.title}');
+        }
+      }
+    } else {
+      print('Excluding today\'s tasks from this date');
+    }
+  } 
+
+  // Sort by due date (overdue tasks first, then future tasks)
+  filteredTasks.sort((a, b) {
+    final dateA = a.dueDate ?? DateTime.now();
+    final dateB = b.dueDate ?? DateTime.now();
+    return dateA.compareTo(dateB);
+  });
+
+  print('Found ${filteredTasks.length} tasks with priority $priority');
+  return filteredTasks;
+}
+
+  // Helper method to check if two dates are the same day
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    // Normalize both dates to ensure they're in the same format
+    final d1 = DateTime(date1.year, date1.month, date1.day);
+    final d2 = DateTime(date2.year, date2.month, date2.day);
+    final isSame = d1.year == d2.year && d1.month == d2.month && d1.day == d2.day;
+    print('Is same day? $isSame');
+    return isSame;
   }
 
   /// Gets overdue tasks
   List<Task> get overdueTasks {
     final now = _getMalaysiaTime();
-    return _tasks.values
-        .expand((taskList) => taskList)
-        .where((task) => task.dueDate != null && 
-                        task.dueDate!.isBefore(now) && 
-                        !task.isDone)
+    final todayKey = _getMalaysiaDateKey(now);
+    return _tasks.entries
+        .where((entry) => entry.key.isBefore(todayKey)) // Only past dates
+        .expand((entry) => entry.value)
+        .where((task) => !task.isDone)
         .toList();
   }
 
@@ -165,13 +226,13 @@ class TaskProvider with ChangeNotifier {
         'isDone': !task.isDone,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      
+
       // Update locally
       task.isDone = !task.isDone;
-      
+
       // Update user stats
       await _updateUserStats();
-      
+
       notifyListeners();
     } catch (e) {
       print('Error toggling task: $e');
@@ -186,17 +247,17 @@ class TaskProvider with ChangeNotifier {
     try {
       // Remove from Firestore
       await _userTasksCollection!.doc(task.firestoreId).delete();
-      
+
       // Remove from local storage
       for (var taskList in _tasks.values) {
         if (taskList.remove(task)) {
           break;
         }
       }
-      
+
       // Update user stats
       await _updateUserStats();
-      
+
       notifyListeners();
     } catch (e) {
       print('Error removing task: $e');
@@ -205,7 +266,8 @@ class TaskProvider with ChangeNotifier {
   }
 
   /// Update a task
-  Future<void> updateTask(Task task, {
+  Future<void> updateTask(
+    Task task, {
     String? title,
     String? details,
     DateTime? dueDate,
@@ -227,8 +289,10 @@ class TaskProvider with ChangeNotifier {
         updates['details'] = details;
       }
       if (dueDate != null) {
-        task.dueDate = dueDate;
-        updates['dueDate'] = Timestamp.fromDate(dueDate);
+        // debug
+        final fixedDueDate = _createMalaysiaDateOnly(dueDate);
+        task.dueDate = fixedDueDate;
+        updates['dueDate'] = Timestamp.fromDate(fixedDueDate);
       }
       if (priority != null) {
         task.priority = priority;
@@ -237,19 +301,19 @@ class TaskProvider with ChangeNotifier {
 
       // Update in Firestore
       await _userTasksCollection!.doc(task.firestoreId).update(updates);
-      
+
       // If due date changed, reorganize local storage
       if (dueDate != null) {
         // Remove from old location
         for (var taskList in _tasks.values) {
           taskList.remove(task);
         }
-        
+
         // Add to new location
-        final key = DateTime(dueDate.year, dueDate.month, dueDate.day);
+        final key = _getMalaysiaDateKey(dueDate);
         _tasks.putIfAbsent(key, () => []).add(task);
       }
-      
+
       notifyListeners();
     } catch (e) {
       print('Error updating task: $e');
@@ -262,7 +326,8 @@ class TaskProvider with ChangeNotifier {
     if (_currentUserId == null) return;
 
     try {
-      final allTasksList = _tasks.values.expand((taskList) => taskList).toList();
+      final allTasksList =
+          _tasks.values.expand((taskList) => taskList).toList();
       final totalTasks = allTasksList.length;
       final completedTasks = allTasksList.where((task) => task.isDone).length;
       final pendingTasks = totalTasks - completedTasks;
@@ -287,8 +352,129 @@ class TaskProvider with ChangeNotifier {
   /// Get reference to user's task history collection
   CollectionReference? get _userHistoryCollection {
     if (_currentUserId == null) return null;
-    return _firestore.collection('users').doc(_currentUserId).collection('taskHistory');
+    return _firestore
+        .collection('users')
+        .doc(_currentUserId)
+        .collection('taskHistory');
   }
+
+  // Additional methods to add to your TaskProvider class
+
+/// Update task in database only (without affecting local storage)
+Future<void> updateTaskInDatabase(Task task) async {
+  if (_userTasksCollection == null || task.firestoreId == null) return;
+
+  try {
+    await _userTasksCollection!.doc(task.firestoreId).update({
+      'isDone': task.isDone,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'title': task.title,
+      'details': task.details,
+      'dueDate': task.dueDate != null ? Timestamp.fromDate(task.dueDate!) : null,
+      'priority': task.priority.toString().split('.').last,
+    });
+
+    print('Task updated in database: ${task.title}');
+  } catch (e) {
+    print('Error updating task in database: $e');
+    rethrow;
+  }
+}
+
+/// Remove task from local storage only (UI) without affecting database
+void removeTaskFromLocalStorage(Task task) {
+  try {
+    // Remove from local storage map
+    for (var entry in _tasks.entries) {
+      final taskList = entry.value;
+      if (taskList.contains(task)) {
+        taskList.remove(task);
+        print('Task removed from local storage: ${task.title}');
+        
+        // Clean up empty date entries
+        if (taskList.isEmpty) {
+          _tasks.remove(entry.key);
+        }
+        break;
+      }
+    }
+
+    // Notify listeners to update UI
+    notifyListeners();
+  } catch (e) {
+    print('Error removing task from local storage: $e');
+  }
+}
+
+/// Get completed tasks from database (for analytics or recovery purposes)
+Future<List<Task>> getCompletedTasksFromDatabase({
+  DateTime? startDate,
+  DateTime? endDate,
+}) async {
+  if (_userTasksCollection == null) return [];
+
+  try {
+    Query query = _userTasksCollection!.where('isDone', isEqualTo: true);
+    
+    // Add date filters if provided
+    if (startDate != null) {
+      query = query.where('dueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate));
+    }
+    if (endDate != null) {
+      query = query.where('dueDate', isLessThanOrEqualTo: Timestamp.fromDate(endDate));
+    }
+
+    final querySnapshot = await query.orderBy('updatedAt', descending: true).get();
+
+    return querySnapshot.docs.map((doc) {
+      final taskData = doc.data() as Map<String, dynamic>;
+      return Task.fromFirestore(doc.id, taskData);
+    }).toList();
+  } catch (e) {
+    print('Error getting completed tasks from database: $e');
+    return [];
+  }
+}
+
+/// Restore a completed task back to the UI (if needed)
+Future<void> restoreCompletedTaskToUI(Task task) async {
+  try {
+    if (task.dueDate != null) {
+      final key = _getMalaysiaDateKey(task.dueDate!);
+      _tasks.putIfAbsent(key, () => []).add(task);
+      
+      print('Task restored to UI: ${task.title}');
+      notifyListeners();
+    }
+  } catch (e) {
+    print('Error restoring task to UI: $e');
+    rethrow;
+  }
+}
+
+/// Get count of completed tasks for statistics
+Future<int> getCompletedTasksCount({DateTime? forDate}) async {
+  if (_userTasksCollection == null) return 0;
+
+  try {
+    Query query = _userTasksCollection!.where('isDone', isEqualTo: true);
+    
+    if (forDate != null) {
+      final startOfDay = DateTime(forDate.year, forDate.month, forDate.day);
+      final endOfDay = startOfDay.add(const Duration(days: 1));
+      
+      query = query
+          .where('dueDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('dueDate', isLessThan: Timestamp.fromDate(endOfDay));
+    }
+
+    final querySnapshot = await query.get();
+    return querySnapshot.docs.length;
+  } catch (e) {
+    print('Error getting completed tasks count: $e');
+    return 0;
+  }
+}
 
   /// Add task to history collection
   Future<void> addTaskToHistory(Task task) async {
@@ -308,10 +494,11 @@ class TaskProvider with ChangeNotifier {
     if (_userHistoryCollection == null) return [];
 
     try {
-      final querySnapshot = await _userHistoryCollection!
-          .orderBy('updatedAt', descending: true)
-          .get();
-      
+      final querySnapshot =
+          await _userHistoryCollection!
+              .orderBy('updatedAt', descending: true)
+              .get();
+
       return querySnapshot.docs.map((doc) {
         final taskData = doc.data() as Map<String, dynamic>;
         return Task.fromFirestore(doc.id, taskData);
@@ -342,11 +529,11 @@ class TaskProvider with ChangeNotifier {
     try {
       final batch = _firestore.batch();
       final querySnapshot = await _userHistoryCollection!.get();
-      
+
       for (var doc in querySnapshot.docs) {
         batch.delete(doc.reference);
       }
-      
+
       await batch.commit();
       print('All history tasks cleared');
     } catch (e) {
