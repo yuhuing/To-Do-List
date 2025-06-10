@@ -1,0 +1,611 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'TaskModel.dart';
+import 'TaskProvider.dart';
+
+class HistoryPage extends StatefulWidget {
+  const HistoryPage({super.key});
+
+  @override
+  State<HistoryPage> createState() => _HistoryPageState();
+}
+
+class _HistoryPageState extends State<HistoryPage> {
+  List<Task> historyTasks = [];
+  bool isLoading = true;
+  String errorMessage = '';
+
+  // Color constants matching PersonalProfile
+  static const Color espresso = Color(0xFF2C1810);
+  static const Color coffeeBrown = Color(0xFF4A2C2A);
+  static const Color caramelBrown = Color(0xFF8B5A2B);
+  static const Color creamWhite = Color(0xFFFAF7F2);
+  static const Color milkFoam = Color(0xFFF5F2ED);
+  static const Color cardBg = Color(0xFFFFFFFF);
+  static const Color coffeeShadow = Color(0x1A2C1810);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistoryTasks();
+  }
+
+  Future<void> _loadHistoryTasks() async {
+    try {
+      setState(() {
+        isLoading = true;
+        errorMessage = '';
+      });
+
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      final tasks = await taskProvider.getHistoryTasks();
+      
+      setState(() {
+        historyTasks = tasks;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        errorMessage = 'Error loading history: $e';
+        isLoading = false;
+      });
+      print('Error loading history tasks: $e');
+    }
+  }
+
+  Future<void> _deleteHistoryTask(Task task) async {
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      await taskProvider.deleteHistoryTask(task);
+      
+      setState(() {
+        historyTasks.remove(task);
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task deleted from history'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error deleting task: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _restoreTask(Task task) async {
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      
+      // Create a new task for today
+      final restoredTask = task.copyWith(
+        firestoreId: null, // Clear Firestore ID to create new document
+        dueDate: DateTime.now(), // Set due date to today
+        isDone: false, // Mark as not done
+        updatedAt: DateTime.now(),
+      );
+      
+      // Add back to current tasks
+      await taskProvider.addTask(restoredTask);
+      
+      // Remove from history
+      await taskProvider.deleteHistoryTask(task);
+      
+      setState(() {
+        historyTasks.remove(task);
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Task restored to today\'s tasks'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error restoring task: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showTaskOptions(Task task) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: cardBg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          boxShadow: [
+            BoxShadow(
+              color: coffeeShadow,
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: coffeeBrown.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                task.title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: espresso,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              _buildOptionTile(
+                icon: Icons.restore,
+                iconColor: caramelBrown,
+                title: 'Restore Task',
+                subtitle: 'Move back to current tasks',
+                onTap: () {
+                  Navigator.pop(context);
+                  _restoreTask(task);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildOptionTile(
+                icon: Icons.delete_outline,
+                iconColor: Colors.red[600]!,
+                title: 'Delete Permanently',
+                subtitle: 'Remove from history',
+                onTap: () {
+                  Navigator.pop(context);
+                  _showDeleteConfirmation(task);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOptionTile({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: milkFoam,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: coffeeBrown.withOpacity(0.1)),
+      ),
+      child: ListTile(
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        title: Text(
+          title,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            color: espresso,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(
+            color: coffeeBrown,
+            fontSize: 13,
+          ),
+        ),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(Task task) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Delete Task',
+          style: TextStyle(
+            color: espresso,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Are you sure you want to permanently delete "${task.title}"?',
+          style: TextStyle(color: coffeeBrown),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              foregroundColor: coffeeBrown,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteHistoryTask(task);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red[600],
+              backgroundColor: Colors.red[50],
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'No date';
+    return DateFormat('MMM dd, yyyy').format(date);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: creamWhite,
+      appBar: AppBar(
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.history, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            const Text(
+              "Task History",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: espresso,
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        elevation: 0,
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [espresso, coffeeBrown],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        actions: [
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: _loadHistoryTasks,
+            ),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: isLoading
+              ? Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(caramelBrown),
+                  ),
+                )
+              : errorMessage.isNotEmpty
+                  ? Center(
+                      child: Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: cardBg,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: coffeeShadow,
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.red[50],
+                                borderRadius: BorderRadius.circular(50),
+                              ),
+                              child: Icon(
+                                Icons.error_outline,
+                                size: 48,
+                                color: Colors.red[600],
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Oops! Something went wrong',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: espresso,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              errorMessage,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: coffeeBrown,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 20),
+                            ElevatedButton(
+                              onPressed: _loadHistoryTasks,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: caramelBrown,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                              ),
+                              child: const Text(
+                                'Try Again',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : historyTasks.isEmpty
+                      ? Center(
+                          child: Container(
+                            padding: const EdgeInsets.all(32),
+                            decoration: BoxDecoration(
+                              color: cardBg,
+                              borderRadius: BorderRadius.circular(16),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: coffeeShadow,
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: caramelBrown.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(50),
+                                  ),
+                                  child: Icon(
+                                    Icons.history,
+                                    size: 64,
+                                    color: caramelBrown,
+                                  ),
+                                ),
+                                const SizedBox(height: 20),
+                                Text(
+                                  "No History Yet",
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: espresso,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  "Incomplete tasks will appear here after midnight.",
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: coffeeBrown,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _loadHistoryTasks,
+                          color: caramelBrown,
+                          child: ListView.builder(
+                            itemCount: historyTasks.length,
+                            itemBuilder: (context, index) {
+                              final task = historyTasks[index];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: cardBg,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: coffeeShadow,
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: ListTile(
+                                  contentPadding: const EdgeInsets.all(20),
+                                  title: Text(
+                                    task.title,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      decoration: task.isDone 
+                                          ? TextDecoration.lineThrough 
+                                          : TextDecoration.none,
+                                      fontSize: 18,
+                                      color: espresso,
+                                    ),
+                                  ),
+                                  subtitle: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (task.details.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          task.details,
+                                          style: TextStyle(
+                                            color: coffeeBrown,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                      const SizedBox(height: 12),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12, 
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: task.priorityColor.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(20),
+                                              border: Border.all(
+                                                color: task.priorityColor.withOpacity(0.3),
+                                                width: 1.5,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              task.priorityDisplayName,
+                                              style: TextStyle(
+                                                color: task.priorityColor,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              'Due: ${_formatDate(task.dueDate)}',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: coffeeBrown,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: task.isDone 
+                                              ? Colors.green.withOpacity(0.1)
+                                              : Colors.red.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          task.isDone ? Icons.check_circle : Icons.warning,
+                                          color: task.isDone ? Colors.green : Colors.red,
+                                          size: 20,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: coffeeBrown.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Icon(
+                                          Icons.more_vert,
+                                          color: coffeeBrown,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  onTap: () => _showTaskOptions(task),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+        ),
+      ),
+    );
+  }
+}
