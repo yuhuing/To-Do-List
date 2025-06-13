@@ -5,9 +5,14 @@ import 'TaskModel.dart';
 import '../widget/AppDrawer.dart';
 import 'TaskProvider.dart';
 
-class PersonalProfile extends StatelessWidget {
+class PersonalProfile extends StatefulWidget {
   const PersonalProfile({super.key});
 
+  @override
+  State<PersonalProfile> createState() => _PersonalProfileState();
+}
+
+class _PersonalProfileState extends State<PersonalProfile> {
   // Color constants matching the pattern
   static const Color espresso = Color(0xFF2C1810);
   static const Color coffeeBrown = Color(0xFF4A2C2A);
@@ -17,58 +22,121 @@ class PersonalProfile extends StatelessWidget {
   static const Color cardBg = Color(0xFFFFFFFF);
   static const Color coffeeShadow = Color(0x1A2C1810);
 
+  // State variables for database data
+  List<Task> todayTasks = [];
+  Map<DateTime, List<Task>> weeklyTasks = {};
+  bool isLoading = true;
+  String? errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTaskData();
+  }
+
+  /// Load task data from TaskProvider
+  Future<void> _loadTaskData() async {
+    if (!mounted) return;
+    
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      final taskProvider = Provider.of<TaskProvider>(context, listen: false);
+      
+      // Ensure tasks are initialized from database
+      await taskProvider.initializeTasks();
+      
+      // Get today's date
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      // Calculate start of current week (Monday)
+      final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
+      
+      // Get today's tasks using existing method
+      final todayTasksList = taskProvider.getTasksFor(today);
+      
+      // Get all tasks from TaskProvider
+      final allTasksMap = taskProvider.allTasks;
+      
+      // Filter weekly tasks (last 7 days from start of week)
+      Map<DateTime, List<Task>> weeklyTasksMap = {};
+      
+      for (int i = 0; i < 7; i++) {
+        final date = startOfWeek.add(Duration(days: i));
+        final tasksForDate = taskProvider.getTasksFor(date);
+        if (tasksForDate.isNotEmpty) {
+          weeklyTasksMap[date] = tasksForDate;
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          todayTasks = todayTasksList;
+          weeklyTasks = weeklyTasksMap;
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          errorMessage = "Error loading tasks: $e";
+          isLoading = false;
+        });
+      }
+    }
+  }
+
+  /// Refresh data when needed
+  Future<void> _refreshData() async {
+    await _loadTaskData();
+  }
+
   /// Calculates the fraction of tasks done this week
-  double getWeeklyCompletionRate(Map<DateTime, List<Task>> allTasks) {
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-
-    final weeklyTasks = allTasks.entries
-        .where((entry) => !entry.key.isBefore(DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)))
-        .expand((entry) => entry.value)
-        .toList();
-
+  double getWeeklyCompletionRate() {
     if (weeklyTasks.isEmpty) return 0.0;
 
-    final completed = weeklyTasks.where((task) => task.isDone).length;
-    return completed / weeklyTasks.length;
+    final allWeeklyTasks = weeklyTasks.values.expand((tasks) => tasks).toList();
+    if (allWeeklyTasks.isEmpty) return 0.0;
+
+    final completed = allWeeklyTasks.where((task) => task.isDone).length;
+    return completed / allWeeklyTasks.length;
   }
 
   /// Builds the data points for the 7‑day line graph
-  List<FlSpot> getWeeklyGraphData(Map<DateTime, List<Task>> allTasks) {
+  List<FlSpot> getWeeklyGraphData() {
     final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final today = DateTime(now.year, now.month, now.day);
+    final startOfWeek = today.subtract(Duration(days: today.weekday - 1));
 
-    // Initialize a map from day index (0=Mon..6=Sun) to list of tasks
-    Map<int, List<Task>> dailyMap = {for (var i = 0; i < 7; i++) i: []};
+    // Initialize data for each day of the week
+    List<FlSpot> spots = [];
 
-    for (var entry in allTasks.entries) {
-      final diff = entry.key.difference(DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)).inDays;
-      if (diff >= 0 && diff < 7) {
-        dailyMap[diff]!.addAll(entry.value);
+    for (int i = 0; i < 7; i++) {
+      final date = startOfWeek.add(Duration(days: i));
+      final tasksForDay = weeklyTasks[date] ?? [];
+      
+      double percentage = 0.0;
+      if (tasksForDay.isNotEmpty) {
+        final completed = tasksForDay.where((task) => task.isDone).length;
+        percentage = (completed / tasksForDay.length) * 100;
       }
+      
+      spots.add(FlSpot(i.toDouble(), percentage));
     }
 
-    // For each day, compute percent done and return an FlSpot(x, y)
-    return dailyMap.entries.map((e) {
-      final total = e.value.length;
-      final done = e.value.where((t) => t.isDone).length;
-      final percent = total > 0 ? (done / total) * 100 : 0.0;
-      return FlSpot(e.key.toDouble(), percent);
-    }).toList();
+    return spots;
   }
 
   @override
   Widget build(BuildContext context) {
-    final taskProvider = Provider.of<TaskProvider>(context);
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final todayTasks = taskProvider.getTasksFor(today);
-    final allTasks = taskProvider.allTasks;
-
     final completed = todayTasks.where((t) => t.isDone).length;
     final remaining = todayTasks.where((t) => !t.isDone).length;
-    final weeklyPercentage = (getWeeklyCompletionRate(allTasks) * 100).toStringAsFixed(1);
-    final graphData = getWeeklyGraphData(allTasks);
+    final weeklyPercentage = (getWeeklyCompletionRate() * 100).toStringAsFixed(1);
+    final graphData = getWeeklyGraphData();
 
     return Scaffold(
       drawer: const AppDrawer(),
@@ -108,273 +176,341 @@ class PersonalProfile extends StatelessWidget {
             ),
           ),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: 'Refresh Data',
+          ),
+        ],
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              // Top Row - Profile and Stats
-              Row(
+        child: RefreshIndicator(
+          onRefresh: _refreshData,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: _buildBody(completed, remaining, weeklyPercentage, graphData),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(int completed, int remaining, String weeklyPercentage, List<FlSpot> graphData) {
+    if (isLoading) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(caramelBrown),
+            ),
+            SizedBox(height: 16),
+            Text(
+              "Loading your progress...",
+              style: TextStyle(
+                color: coffeeBrown,
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: coffeeBrown.withOpacity(0.6),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              errorMessage!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: coffeeBrown,
+                fontSize: 16,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _refreshData,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: caramelBrown,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text("Retry"),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Top Row - Profile and Stats
+        Row(
+          children: [
+            // Profile Avatar Section
+            Expanded(
+              flex: 2,
+              child: Container(
+                height: 160,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: cardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: coffeeShadow,
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircleAvatar(
+                      radius: 35,
+                      backgroundColor: caramelBrown.withOpacity(0.2),
+                      child: Icon(
+                        Icons.person,
+                        size: 40,
+                        color: caramelBrown,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      "Welcome Back!",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: espresso,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // Today's Tasks Stats
+            Expanded(
+              flex: 3,
+              child: Row(
                 children: [
-                  // Profile Avatar Section
                   Expanded(
-                    flex: 2,
-                    child: Container(
-                      height: 160,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: cardBg,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: coffeeShadow,
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          CircleAvatar(
-                            radius: 35,
-                            backgroundColor: caramelBrown.withOpacity(0.2),
-                            child: Icon(
-                              Icons.person,
-                              size: 40,
-                              color: caramelBrown,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            "Welcome Back!",
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: espresso,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: _buildStatCard("Completed", "$completed", Colors.green),
                   ),
-                  
-                  const SizedBox(width: 12),
-                  
-                  // Today's Tasks Stats
+                  const SizedBox(width: 8),
                   Expanded(
-                    flex: 3,
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: _buildStatCard("Completed", "$completed", Colors.green),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildStatCard("Pending", "$remaining", Colors.red),
-                        ),
-                      ],
-                    ),
+                    child: _buildStatCard("Pending", "$remaining", Colors.red),
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
 
-              const SizedBox(height: 16),
+        const SizedBox(height: 16),
 
-              // Combined Weekly Progress Chart and Stats
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: cardBg,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: coffeeShadow,
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+        // Combined Weekly Progress Chart and Stats
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: coffeeShadow,
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header with title and percentage
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "Weekly Progress",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: espresso,
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header with title and percentage
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: caramelBrown.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: caramelBrown.withOpacity(0.3),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            "Weekly Progress",
+                            "$weeklyPercentage%",
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: espresso,
+                              color: caramelBrown,
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: caramelBrown.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: caramelBrown.withOpacity(0.3),
-                                width: 1.5,
-                              ),
+                          const SizedBox(width: 4),
+                          Text(
+                            "avg",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: coffeeBrown,
+                              fontWeight: FontWeight.w500,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  "$weeklyPercentage%",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: caramelBrown,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                
+                // Chart
+                Expanded(
+                  child: LineChart(
+                    LineChartData(
+                      minX: 0,
+                      maxX: 6,
+                      minY: 0,
+                      maxY: 100,
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        horizontalInterval: 25,
+                        getDrawingHorizontalLine: (value) {
+                          return FlLine(
+                            color: Colors.grey.withOpacity(0.2),
+                            strokeWidth: 1,
+                          );
+                        },
+                      ),
+                      titlesData: FlTitlesData(
+                        rightTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        topTitles: const AxisTitles(
+                          sideTitles: SideTitles(showTitles: false),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 30,
+                            interval: 1,
+                            getTitlesWidget: (value, meta) {
+                              const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+                              if (value.toInt() >= 0 && value.toInt() < days.length) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(top: 6.0),
+                                  child: Text(
+                                    days[value.toInt()],
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: coffeeBrown,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  "avg",
+                                );
+                              }
+                              return const Text('');
+                            },
+                          ),
+                        ),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 40,
+                            interval: 25,
+                            getTitlesWidget: (value, meta) {
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 6.0),
+                                child: Text(
+                                  '${value.toInt()}%',
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: coffeeBrown,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                              ],
-                            ),
+                              );
+                            },
                           ),
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: 16),
-                      
-                      // Chart
-                      Expanded(
-                        child: LineChart(
-                          LineChartData(
-                            minX: 0,
-                            maxX: 6,
-                            minY: 0,
-                            maxY: 100,
-                            gridData: FlGridData(
-                              show: true,
-                              drawVerticalLine: false,
-                              horizontalInterval: 25,
-                              getDrawingHorizontalLine: (value) {
-                                return FlLine(
-                                  color: Colors.grey.withOpacity(0.2),
-                                  strokeWidth: 1,
-                                );
-                              },
-                            ),
-                            titlesData: FlTitlesData(
-                              rightTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
-                              topTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
-                              bottomTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 30,
-                                  interval: 1,
-                                  getTitlesWidget: (value, meta) {
-                                    const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-                                    if (value.toInt() >= 0 && value.toInt() < days.length) {
-                                      return Padding(
-                                        padding: const EdgeInsets.only(top: 6.0),
-                                        child: Text(
-                                          days[value.toInt()],
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: coffeeBrown,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return const Text('');
-                                  },
-                                ),
-                              ),
-                              leftTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 40,
-                                  interval: 25,
-                                  getTitlesWidget: (value, meta) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 6.0),
-                                      child: Text(
-                                        '${value.toInt()}%',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: coffeeBrown,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            borderData: FlBorderData(
-                              show: true,
-                              border: Border(
-                                bottom: BorderSide(color: Colors.grey.withOpacity(0.3)),
-                                left: BorderSide(color: Colors.grey.withOpacity(0.3)),
-                              ),
-                            ),
-                            lineBarsData: [
-                              LineChartBarData(
-                                spots: graphData,
-                                isCurved: true,
+                      borderData: FlBorderData(
+                        show: true,
+                        border: Border(
+                          bottom: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                          left: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                        ),
+                      ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: graphData,
+                          isCurved: true,
+                          color: caramelBrown,
+                          barWidth: 3,
+                          dotData: FlDotData(
+                            show: true,
+                            getDotPainter: (spot, percent, barData, index) {
+                              return FlDotCirclePainter(
+                                radius: 4,
                                 color: caramelBrown,
-                                barWidth: 3,
-                                dotData: FlDotData(
-                                  show: true,
-                                  getDotPainter: (spot, percent, barData, index) {
-                                    return FlDotCirclePainter(
-                                      radius: 4,
-                                      color: caramelBrown,
-                                      strokeWidth: 2,
-                                      strokeColor: Colors.white,
-                                    );
-                                  },
-                                ),
-                                belowBarData: BarAreaData(
-                                  show: true,
-                                  color: caramelBrown.withOpacity(0.1),
-                                ),
-                              ),
-                            ],
+                                strokeWidth: 2,
+                                strokeColor: Colors.white,
+                              );
+                            },
+                          ),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: caramelBrown.withOpacity(0.1),
                           ),
                         ),
-                      ),
-                      
-                      // Bottom encouragement text
-                      const SizedBox(height: 12),
-                      Center(
-                        child: Text(
-                          "Keep up the great work!",
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: coffeeBrown,
-                            fontStyle: FontStyle.italic,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+                
+                // Bottom encouragement text
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    "Keep up the great work!",
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: coffeeBrown,
+                      fontStyle: FontStyle.italic,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 
