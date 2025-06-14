@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:myapp/screens/TodayTask.dart';
-import 'package:myapp/screens/LongTerm.dart';
-import 'package:myapp/screens/Calendar.dart';
-import 'package:myapp/screens/GroupCollaborationPage.dart';
-import 'package:myapp/screens/PersonalProfile.dart';
-import 'package:myapp/auth/login_screen.dart';
+import '../screens/TodayTask.dart';
+import '../screens/LongTerm.dart';
+import '../screens/Calendar.dart';
+import '../screens/GroupCollaborationPage.dart';
+import '../screens/PersonalProfile.dart';
+import '../auth/login_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -95,70 +95,76 @@ class AppDrawer extends StatelessWidget {
 
   // Confirmation dialog for sign out
   void _showSignOutDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: cardBg,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.red[50],
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.logout,
-                  color: Colors.red[600],
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Sign Out',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: espresso,
-                ),
-              ),
-            ],
-          ),
-          content: Text(
-            'Are you sure you want to sign out?',
-            style: TextStyle(color: coffeeBrown),
-          ),
-          actions: [
-            TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: coffeeBrown,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+  showDialog(
+    context: context,
+    builder: (context) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 370,
+          minWidth: 370,
+        ),
+      child: AlertDialog(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      backgroundColor: cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(8),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[600],
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                elevation: 0,
-              ),
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-                _signOut(context); // Sign out
-              },
-              child: const Text(
-                'Sign Out',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+            child: Icon(
+              Icons.logout,
+              color: Colors.red[600],
+              size: 20,
             ),
-          ],
-        );
-      },
-    );
-  }
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Sign Out',
+            style: TextStyle(
+              color: espresso,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+      content: Text(
+        'Are you sure you want to sign out of your account?',
+        style: TextStyle(
+          color: coffeeBrown,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            foregroundColor: coffeeBrown,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            _signOut(context);
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.red[600],
+            backgroundColor: Colors.red[50],
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: const Text('Sign Out'),
+        ),
+      ],
+    ),
+    ),
+  ),
+  );
+}
 
   Widget _buildDrawerItem({
     required IconData icon,
