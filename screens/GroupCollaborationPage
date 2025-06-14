@@ -390,6 +390,48 @@ class FirebaseService {
           }).toList();
         });
   }
+
+  static Future<bool> deleteGroup(String groupId) async {
+    try {
+      final groupDocRef = _firestore.collection('groups').doc(groupId);
+
+      // Get group data to find members before deleting
+      final groupDoc = await groupDocRef.get();
+      if (!groupDoc.exists) {
+        print('Group not found, cannot delete.');
+        return false;
+      }
+
+      final groupData = groupDoc.data() as Map<String, dynamic>;
+      final members = List<Map<String, dynamic>>.from(groupData['members'] ?? []);
+
+      // 1. Delete all tasks in the sub-collection using a batch write for efficiency
+      final tasksSnapshot = await groupDocRef.collection('tasks').get();
+      final batch = _firestore.batch();
+      for (var doc in tasksSnapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+
+      // 2. Remove group ID from each member's user document
+      for (var member in members) {
+        final memberId = member['id'];
+        if (memberId != null) {
+          await _firestore.collection('users').doc(memberId).update({
+            'groups': FieldValue.arrayRemove([groupId])
+          });
+        }
+      }
+
+      // 3. Delete the group document itself
+      await groupDocRef.delete();
+
+      return true;
+    } catch (e) {
+      print('Error deleting group: $e');
+      return false;
+    }
+  }
 }
 
 // ======= MAIN PAGE =======
@@ -780,9 +822,15 @@ class GroupCard extends StatelessWidget {
                           decoration: BoxDecoration(
                             color:
                                 isCreator
-                                    ? AppColors.caramelBrown.withOpacity(0.1)
-                                    : AppColors.milkFoam,
+                                    ? Colors.orange.withOpacity(0.2) // Owner
+                                    : Colors.green.withOpacity(0.2), // Member
                             borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isCreator
+                                  ? Colors.orange.withOpacity(0.3) // Owner border
+                                  : Colors.green.withOpacity(0.3), // Member border
+                              width: 1,
+                            ),
                           ),
                           child: Text(
                             isCreator ? "Owner" : "Member",
@@ -790,9 +838,9 @@ class GroupCard extends StatelessWidget {
                               fontSize: 12,
                               color:
                                   isCreator
-                                      ? AppColors.caramelBrown
-                                      : AppColors.coffeeBrown,
-                              fontWeight: FontWeight.w500,
+                                      ? Colors.orange.shade700 // Owner text
+                                      : Colors.green.withOpacity(0.8), // Member text color
+                              fontWeight: isCreator ? FontWeight.w600 : FontWeight.w600,
                             ),
                           ),
                         ),
@@ -801,6 +849,15 @@ class GroupCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (isCreator)
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: Colors.red.shade400,
+                  ),
+                  onPressed: () => _showDeleteGroupDialog(context, group),
+                  tooltip: 'Delete Group',
+                ),
             ],
           ),
           children: [
@@ -1337,6 +1394,95 @@ class GroupCard extends StatelessWidget {
           ),
     );
   }
+
+  void _showDeleteGroupDialog(BuildContext context, Group group) {
+  showDialog(
+    context: context,
+    builder: (context) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 370,
+          minWidth: 370,
+        ),
+        child: AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.delete_outline,
+                  color: Colors.red[600],
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Delete Group',
+                style: TextStyle(
+                  color: AppColors.espresso,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to delete the group "${group.name}"?',
+            style: TextStyle(
+              color: AppColors.coffeeBrown,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.coffeeBrown,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context); // Close dialog first
+                final success = await FirebaseService.deleteGroup(group.id);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? 'Group "${group.name}" deleted successfully.'
+                            : 'Failed to delete group.',
+                      ),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red[600],
+                backgroundColor: Colors.red[50],
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 }
 
 // ======= TASKS VIEW =======
@@ -1591,29 +1737,102 @@ class TaskItem extends StatelessWidget {
                 color: Colors.red.shade400,
                 size: 18,
               ),
-              onPressed: () async {
-                final success = await FirebaseService.deleteTask(
-                  group.id,
-                  task.id,
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      success ? 'Task deleted' : 'Failed to delete task',
-                    ),
-                    backgroundColor: success ? Colors.green : Colors.red,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                );
-              },
+              onPressed: () => _showDeleteTaskDialog(context, task, group),
             ),
         ],
       ),
     );
   }
+
+  void _showDeleteTaskDialog(BuildContext context, Task task, Group group) {
+  showDialog(
+    context: context,
+    builder: (context) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 370,
+          minWidth: 370,
+        ),
+        child: AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.delete_outline,
+                  color: Colors.red[600],
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Delete Task',
+                style: TextStyle(
+                  color: AppColors.espresso,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Are you sure you want to delete the task "${task.title}"?',
+            style: TextStyle(
+              color: AppColors.coffeeBrown,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.coffeeBrown,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context); // Close dialog first
+                final success = await FirebaseService.deleteTask(
+                  group.id,
+                  task.id,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success ? 'Task deleted successfully.' : 'Failed to delete task.',
+                      ),
+                      backgroundColor: success ? Colors.green : Colors.red,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  );
+                }
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red[600],
+                backgroundColor: Colors.red[50],
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 
   // Add this method inside the TaskItem class:
   Future<String> _getCreatorName(String creatorId) async {
