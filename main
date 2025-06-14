@@ -11,10 +11,12 @@ import '../screens/LongTerm.dart';
 import '../screens/Calendar.dart';
 import '../screens/PersonalProfile.dart';
 import '../screens/TaskProvider.dart';
+// Import your splash screen here
+import 'screens/CoffeeSplashScreen.dart'; // Make sure to create this file with the CoffeeProgressSplash
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+     
   if (kIsWeb) {
     await Firebase.initializeApp(
       options: const FirebaseOptions(
@@ -30,10 +32,7 @@ Future<void> main() async {
   } else {
     await Firebase.initializeApp();
   }
-  
-  // UNCOMMENT THE LINE BELOW TO FORCE LOGOUT ON APP START (for testing)
-  // await FirebaseAuth.instance.signOut();
-  
+      
   runApp(const MyApp());
 }
 
@@ -47,14 +46,12 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => TaskProvider()),
       ],
       child: MaterialApp(
-        title: 'To-Do List App',
+        title: 'CafeChecklist',
         debugShowCheckedModeBanner: false,
-        // OPTION 1: Use AuthWrapper (recommended for production)
-        home: const AuthWrapper(),
-        
-        // OPTION 2: Always show LoginScreen (uncomment line below and comment line above)
-        // home: const LoginScreen(),
-        
+        // Show splash screen first with coffee progress
+        home: CoffeeProgressSplash(
+          nextScreen: const AuthWrapper(),
+        ),
         routes: {
           '/login': (context) => LoginScreen(),
           '/today': (context) => TodayTask(),
@@ -70,6 +67,13 @@ class MyApp extends StatelessWidget {
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
+  // Coffee theme colors
+  static const Color espresso = Color(0xFF2C1810);
+  static const Color coffeeBrown = Color(0xFF4A2C2A);
+  static const Color caramelBrown = Color(0xFF8B5A2B);
+  static const Color creamWhite = Color(0xFFFAF7F2);
+  static const Color milkFoam = Color(0xFFF5F2ED);
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<User?>(
@@ -77,33 +81,103 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         // Show loading while checking auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(
-            backgroundColor: Color(0xFFFFF3D9),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  CircularProgressIndicator(color: Colors.brown),
-                  SizedBox(height: 16),
-                  Text(
-                    'Loading...',
-                    style: TextStyle(
-                      color: Colors.brown,
-                      fontSize: 16,
+          return Scaffold(
+            body: Container(
+              width: double.infinity,
+              height: double.infinity,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    creamWhite,
+                    milkFoam,
+                    caramelBrown.withOpacity(0.1),
+                  ],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Coffee cup loading indicator
+                    Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        color: coffeeBrown,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: espresso.withOpacity(0.2),
+                            blurRadius: 10,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
+                      ),
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            right: 8,
+                            bottom: 8,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: espresso,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 8,
+                            left: 8,
+                            right: 8,
+                            height: 10,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: milkFoam,
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(6),
+                                  topRight: Radius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: 30,
+                      height: 30,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 3,
+                        valueColor: AlwaysStoppedAnimation<Color>(caramelBrown),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Checking authentication...',
+                      style: TextStyle(
+                        color: coffeeBrown,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );
         }
-        
+                
         // If user is logged in, show TodayTask (main app)
         if (snapshot.hasData && snapshot.data != null) {
           print('User is logged in: ${snapshot.data!.email}');
           return const TodayTask();
         }
-        
+                
         // If not logged in, show LoginScreen
         print('User is not logged in, showing LoginScreen');
         return const LoginScreen();
