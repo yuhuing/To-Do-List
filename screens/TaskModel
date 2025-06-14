@@ -12,6 +12,8 @@ class Task {
   Priority priority;
   DateTime? createdAt;
   DateTime? updatedAt;
+  bool completeLate;
+  bool isPriorityManual;
 
   Task({
     this.firestoreId,
@@ -22,6 +24,8 @@ class Task {
     this.priority = Priority.medium,
     this.createdAt,
     this.updatedAt,
+    this.completeLate = false,
+    this.isPriorityManual = false,
   }) {
     createdAt ??= DateTime.now();
   }
@@ -76,8 +80,13 @@ class Task {
       'dueDate': dueDate != null ? Timestamp.fromDate(dueDate!) : null,
       'isDone': isDone,
       'priority': priority.toString().split('.').last, // Convert enum to string
-      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
+      'createdAt':
+          createdAt != null
+              ? Timestamp.fromDate(createdAt!)
+              : FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+      'completeLate': completeLate,
+      'isPriorityManual': isPriorityManual,
     };
   }
 
@@ -87,18 +96,29 @@ class Task {
       firestoreId: docId,
       title: data['title'] ?? '',
       details: data['details'] ?? '',
-      dueDate: data['dueDate'] != null ? (data['dueDate'] as Timestamp).toDate() : null,
+      dueDate:
+          data['dueDate'] != null
+              ? (data['dueDate'] as Timestamp).toDate()
+              : null,
       isDone: data['isDone'] ?? false,
       priority: _parsePriority(data['priority']),
-      createdAt: data['createdAt'] != null ? (data['createdAt'] as Timestamp).toDate() : DateTime.now(),
-      updatedAt: data['updatedAt'] != null ? (data['updatedAt'] as Timestamp).toDate() : null,
+      createdAt:
+          data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+      updatedAt:
+          data['updatedAt'] != null
+              ? (data['updatedAt'] as Timestamp).toDate()
+              : null,
+      completeLate: data['completeLate'] ?? false,
+      isPriorityManual: data['isPriorityManual'] ?? false,
     );
   }
 
   // Helper method to parse priority string to enum
   static Priority _parsePriority(dynamic priorityData) {
     if (priorityData == null) return Priority.medium;
-    
+
     final priorityStr = priorityData.toString().toLowerCase();
     switch (priorityStr) {
       case 'high':
@@ -121,6 +141,8 @@ class Task {
     Priority? priority,
     DateTime? createdAt,
     DateTime? updatedAt,
+    bool? completeLate,
+    bool? isPriorityManual,
   }) {
     return Task(
       firestoreId: firestoreId ?? this.firestoreId,
@@ -131,6 +153,8 @@ class Task {
       priority: priority ?? this.priority,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      completeLate: completeLate ?? this.completeLate,
+      isPriorityManual: isPriorityManual ?? this.isPriorityManual,
     );
   }
 
