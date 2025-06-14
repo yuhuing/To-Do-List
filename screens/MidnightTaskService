@@ -14,13 +14,21 @@ class MidnightTaskService {
   static BuildContext? _context;
 
   // Malaysia Time
+  // static DateTime _getMalaysiaTime() {
+  //   return DateTime.now().toUtc().add(const Duration(hours: 8));
+  // }
+
+  // static DateTime _getMalaysiaDateKey(DateTime dateTime) {
+  //   final malaysiaTime = dateTime.toUtc().add(const Duration(hours: 8));
+  //   return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  // }
+
   static DateTime _getMalaysiaTime() {
-    return DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime.now();
   }
 
-  static DateTime _getMalaysiaDateKey(DateTime dateTime) {
-    final malaysiaTime = dateTime.toUtc().add(const Duration(hours: 8));
-    return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  static DateTime _getMalaysiaDateKey(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
   }
 
   // Initialize the midnight service (如果当前时间已经过午夜，且未处理 → 执行处理)
@@ -55,8 +63,6 @@ class MidnightTaskService {
 
     final now = _getMalaysiaTime();
 
-    // For production: use actual midnight
-    // year(now.year), month(now.month), day(now.day + 1), hour(0), minute(0), second(0)
     final todayMidnight = DateTime(
       now.year,
       now.month,
@@ -64,15 +70,8 @@ class MidnightTaskService {
     ); // eg: 2025, 6, 8, 0hr, 0min, 0sec, 0milisec, 0microsec
     final nextMidnight = todayMidnight.add(const Duration(days: 1));
 
-    // For testing: use 1-minute intervals
-    // final nextMidnight = todayMidnight.add(const Duration(minutes: 1));
-
     final diff = nextMidnight.difference(now);
-
-    // print('Current Malaysia time: $now');
-    // print('Next midnight Malaysia time: $nextMidnight');
-    // print('Next midnight check scheduled in: ${diff.inHours} hours ${diff.inMinutes % 60} minutes',
-    //);
+    // final diff = Duration(minutes: 1); // Test: 3 minutes
 
     _midnightTimer = Timer(diff, () async {
       if (_context != null) {
@@ -98,8 +97,9 @@ class MidnightTaskService {
       final now = _getMalaysiaTime();
       final previousDay = now.subtract(const Duration(days: 1));
       final previousDayKey = _getMalaysiaDateKey(previousDay);
-      final previousDayTasks = taskProvider.getTasksFor(previousDayKey);
-
+      
+      // Get all tasks for the previous day, including completed ones
+      final previousDayTasks = taskProvider.getAllTasksFor(previousDayKey);
       print('Current Malaysia time: ${now.toString()}');
       print('Processing tasks for Malaysia date: ${previousDayKey.toString()}');
       print('Found ${previousDayTasks.length} tasks from the previous day');
@@ -110,17 +110,13 @@ class MidnightTaskService {
 
       for (var task in previousDayTasks) {
         try {
-          if (task.isDone) {
-            // NEW: Remove completed tasks from UI but keep in database
-            await _removeCompletedTaskFromUI(task, taskProvider);
-            completedRemovedCount++;
-            print('Completed task deleted: ${task.title}');
-          } else {
+          if (!task.isDone) {
             // Move incomplete tasks to history
             await _moveTaskToHistory(task, taskProvider);
             incompleteMovedCount++;
             print('Incomplete task moved to history: ${task.title}');
           }
+          // else: do nothing, keep completed tasks for analytics/history
         } catch (e) {
           print('Error processing task ${task.title}: $e');
           // Continue with other tasks even if one fails
@@ -136,35 +132,6 @@ class MidnightTaskService {
     } catch (e) {
       print('Error handling midnight tasks: $e');
       // Don't mark as handled if there was an error
-    }
-  }
-
-  // NEW: Remove completed task from UI while keeping it in the database
-  static Future<void> _removeCompletedTaskFromUI(
-    Task task,
-    TaskProvider taskProvider,
-  ) async {
-    try {
-      // Create a completed task entry for the main tasks collection
-      // This keeps the task in the database but marks it as "archived"
-      final archivedTask = task.copyWith(
-        updatedAt: DateTime.now(),
-        // You can add a custom field to mark it as archived if needed
-        // For now, we'll just update the timestamp
-      );
-
-      // Update the task in Firestore to ensure it's marked as completed
-      // and has the latest timestamp
-      await taskProvider.updateTaskInDatabase(archivedTask);
-
-      // Remove from local storage (UI) only
-      // This will make it disappear from the UI while keeping it in the database
-      taskProvider.removeTaskFromLocalStorage(task);
-
-      print('Completed task removed from UI but kept in database: ${task.title}');
-    } catch (e) {
-      print('Error removing completed task from UI: $e');
-      rethrow;
     }
   }
 
@@ -185,7 +152,7 @@ class MidnightTaskService {
         await prefs.setString(
           'lastHandledDate',
           nowDate,
-        ); // 把当前日期保存到本地，作为“最后处理日期”，方便下次判断
+        ); // 把当前日期保存到本地，作为"最后处理日期"，方便下次判断
         await prefs.setBool(
           'midnightHandled',
           false,
@@ -229,7 +196,8 @@ class MidnightTaskService {
       // Create a history entry for the incomplete task
       final historyTask = task.copyWith(
         isDone: false, // Mark as incomplete in history
-        updatedAt: DateTime.now().toUtc().add(const Duration(hours: 8)), // Update the timestamp
+        // updatedAt: DateTime.now().toUtc().add(const Duration(hours: 8)), // Update the timestamp
+        updatedAt: DateTime.now(), // Update the timestamp
       );
 
       // Add to history collection in Firebase
@@ -248,7 +216,8 @@ class MidnightTaskService {
   // Check if midnight handling should occur
   static Future<bool> shouldHandleMidnight() async {
     await _loadMidnightHandled();
-    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    // final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    final now = DateTime.now();
     final todayMidnight = DateTime(now.year, now.month, now.day);
     return now.isAfter(todayMidnight) && !_midnightHandled;
   }
@@ -290,7 +259,7 @@ class MidnightTaskService {
     print('Would process tasks from: ${previousDayKey.toString()}');
 
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
-    final tasksToProcess = taskProvider.getTasksFor(previousDayKey);
+    final tasksToProcess = taskProvider.getAllTasksFor(previousDayKey);
 
     print('Found ${tasksToProcess.length} tasks that would be processed:');
     for (var task in tasksToProcess) {
