@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'TaskProvider.dart';
 import 'TaskModel.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MidnightTaskService {
   static Timer? _midnightTimer;
@@ -196,15 +197,39 @@ class MidnightTaskService {
       // Create a history entry for the incomplete task
       final historyTask = task.copyWith(
         isDone: false, // Mark as incomplete in history
-        // updatedAt: DateTime.now().toUtc().add(const Duration(hours: 8)), // Update the timestamp
         updatedAt: DateTime.now(), // Update the timestamp
       );
 
-      // Add to history collection in Firebase
-      await taskProvider.addTaskToHistory(historyTask);
+      // Use a transaction to ensure atomicity
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        // First check if task already exists in history
+        final historyCollection = taskProvider.userHistoryCollection;
+        if (historyCollection == null) return;
 
-      // Remove from current tasks
-      await taskProvider.removeTask(task);
+        final historyQuery = await historyCollection
+            .where('title', isEqualTo: task.title)
+            .where('dueDate', isEqualTo: Timestamp.fromDate(task.dueDate!))
+            .get();
+
+        if (historyQuery.docs.isEmpty) {
+          // Add to history collection in Firebase
+          final historyRef = historyCollection.doc();
+          transaction.set(historyRef, historyTask.toFirestore());
+
+          // Remove from current tasks
+          if (task.firestoreId != null) {
+            final taskRef = taskProvider.userTasksCollection!.doc(task.firestoreId);
+            transaction.delete(taskRef);
+          }
+        } else {
+          print('Task already exists in history: ${task.title}');
+          // If task exists in history, just remove it from current tasks
+          if (task.firestoreId != null) {
+            final taskRef = taskProvider.userTasksCollection!.doc(task.firestoreId);
+            transaction.delete(taskRef);
+          }
+        }
+      });
 
       print('Task moved to history: ${task.title}');
     } catch (e) {
