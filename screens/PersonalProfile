@@ -33,28 +33,74 @@ class PersonalProfile extends StatelessWidget {
     return completed / weeklyTasks.length;
   }
 
-  /// Builds the data points for the 7‑day line graph
-  List<FlSpot> getWeeklyGraphData(Map<DateTime, List<Task>> allTasks) {
+  /// Builds the data points for the 7‑day bar chart showing completed tasks count
+  List<BarChartGroupData> getWeeklyBarData(TaskProvider taskProvider) {
     final now = DateTime.now();
     final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
 
-    // Initialize a map from day index (0=Mon..6=Sun) to list of tasks
-    Map<int, List<Task>> dailyMap = {for (var i = 0; i < 7; i++) i: []};
+    // Initialize a map from day index (0=Mon..6=Sun) to completed task count
+    Map<int, int> dailyCompletedCount = {for (var i = 0; i < 7; i++) i: 0};
 
+    // Get all tasks and check their completion date
+    final allTasks = taskProvider.allTasks;
+    
     for (var entry in allTasks.entries) {
-      final diff = entry.key.difference(DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)).inDays;
-      if (diff >= 0 && diff < 7) {
-        dailyMap[diff]!.addAll(entry.value);
+      final tasks = entry.value;
+      for (var task in tasks) {
+        // Check if task is either done or marked as completeManually
+        if ((task.isDone || task.completeLate) && task.updatedAt != null) {
+          // Calculate which day of the week this task was completed
+          final completionDate = task.updatedAt!;
+          final daysSinceWeekStart = completionDate.difference(
+            DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day)
+          ).inDays;
+          
+          // If completed within this week, increment the count
+          if (daysSinceWeekStart >= 0 && daysSinceWeekStart < 7) {
+            dailyCompletedCount[daysSinceWeekStart] = dailyCompletedCount[daysSinceWeekStart]! + 1;
+          }
+        }
       }
     }
 
-    // For each day, compute percent done and return an FlSpot(x, y)
-    return dailyMap.entries.map((e) {
-      final total = e.value.length;
-      final done = e.value.where((t) => t.isDone).length;
-      final percent = total > 0 ? (done / total) * 100 : 0.0;
-      return FlSpot(e.key.toDouble(), percent);
+    // Add debug print to check counts
+    print('Daily completed counts: $dailyCompletedCount');
+
+    // Convert to BarChartGroupData
+    return dailyCompletedCount.entries.map((entry) {
+      final dayIndex = entry.key;
+      final count = entry.value;
+      
+      return BarChartGroupData(
+        x: dayIndex,
+        barRods: [
+          BarChartRodData(
+            toY: count.toDouble(),
+            color: caramelBrown,
+            width: 20,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(6),
+              topRight: Radius.circular(6),
+            ),
+            gradient: LinearGradient(
+              colors: [
+                caramelBrown,
+                caramelBrown.withOpacity(0.7),
+              ],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+        ],
+      );
     }).toList();
+  }
+
+  /// Get the maximum count for proper scaling
+  double getMaxCount(List<BarChartGroupData> barData) {
+    if (barData.isEmpty) return 10;
+    final maxCount = barData.map((group) => group.barRods.first.toY).reduce((a, b) => a > b ? a : b);
+    return maxCount > 0 ? maxCount + 2 : 10; // Add padding and ensure minimum scale
   }
 
   @override
@@ -65,10 +111,13 @@ class PersonalProfile extends StatelessWidget {
     final todayTasks = taskProvider.getTasksFor(today);
     final allTasks = taskProvider.allTasks;
 
-    final completed = todayTasks.where((t) => t.isDone).length;
-    final remaining = todayTasks.where((t) => !t.isDone).length;
+    final remaining = taskProvider.getTotalPendingTasks();
     final weeklyPercentage = (getWeeklyCompletionRate(allTasks) * 100).toStringAsFixed(1);
-    final graphData = getWeeklyGraphData(allTasks);
+    final barData = getWeeklyBarData(taskProvider);
+    final maxCount = getMaxCount(barData);
+
+    // Calculate total completed tasks this week
+    final weeklyCompletedCount = barData.fold<int>(0, (sum, group) => sum + group.barRods.first.toY.toInt());
 
     return Scaffold(
       drawer: const AppDrawer(),
@@ -168,7 +217,13 @@ class PersonalProfile extends StatelessWidget {
                     child: Row(
                       children: [
                         Expanded(
-                          child: _buildStatCard("Completed", "$completed", Colors.green),
+                          child: FutureBuilder<int>(
+                            future: taskProvider.getTotalCompletedTasks(),
+                            builder: (context, snapshot) {
+                              final completed = snapshot.data ?? 0;
+                              return _buildStatCard("Completed", "$completed", Colors.green);
+                            },
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
@@ -200,7 +255,7 @@ class PersonalProfile extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header with title and percentage
+                      // Header with title and weekly total
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -225,8 +280,14 @@ class PersonalProfile extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                Icon(
+                                  Icons.check_circle,
+                                  size: 16,
+                                  color: caramelBrown,
+                                ),
+                                const SizedBox(width: 4),
                                 Text(
-                                  "$weeklyPercentage%",
+                                  "$weeklyCompletedCount",
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
@@ -235,7 +296,7 @@ class PersonalProfile extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  "avg",
+                                  "tasks",
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: coffeeBrown,
@@ -247,28 +308,48 @@ class PersonalProfile extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
                       
-                      // Chart
+                      // Subtitle
+                      const SizedBox(height: 4),
+                      Text(
+                        "Tasks completed per day",
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: coffeeBrown.withOpacity(0.8),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      
+                      // Bar Chart
                       Expanded(
-                        child: LineChart(
-                          LineChartData(
-                            minX: 0,
-                            maxX: 6,
-                            minY: 0,
-                            maxY: 100,
-                            gridData: FlGridData(
-                              show: true,
-                              drawVerticalLine: false,
-                              horizontalInterval: 25,
-                              getDrawingHorizontalLine: (value) {
-                                return FlLine(
-                                  color: Colors.grey.withOpacity(0.2),
-                                  strokeWidth: 1,
-                                );
-                              },
+                        child: BarChart(
+                          BarChartData(
+                            maxY: maxCount,
+                            barTouchData: BarTouchData(
+                              enabled: true,
+                              touchTooltipData: BarTouchTooltipData(
+                                tooltipBgColor: espresso.withOpacity(0.9),
+                                tooltipRoundedRadius: 8,
+                                tooltipPadding: const EdgeInsets.all(8),
+                                getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+                                  final dayName = days[group.x.toInt()];
+                                  final count = rod.toY.toInt();
+                                  return BarTooltipItem(
+                                    '$dayName\n$count task${count == 1 ? '' : 's'}',
+                                    const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 12,
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
                             titlesData: FlTitlesData(
+                              show: true,
                               rightTitles: const AxisTitles(
                                 sideTitles: SideTitles(showTitles: false),
                               ),
@@ -278,87 +359,91 @@ class PersonalProfile extends StatelessWidget {
                               bottomTitles: AxisTitles(
                                 sideTitles: SideTitles(
                                   showTitles: true,
-                                  reservedSize: 30,
-                                  interval: 1,
-                                  getTitlesWidget: (value, meta) {
+                                  getTitlesWidget: (double value, TitleMeta meta) {
                                     const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-                                    if (value.toInt() >= 0 && value.toInt() < days.length) {
+                                    final index = value.toInt();
+                                    if (index >= 0 && index < days.length) {
                                       return Padding(
-                                        padding: const EdgeInsets.only(top: 6.0),
+                                        padding: const EdgeInsets.only(top: 8.0),
                                         child: Text(
-                                          days[value.toInt()],
+                                          days[index],
                                           style: TextStyle(
-                                            fontSize: 12,
                                             color: coffeeBrown,
-                                            fontWeight: FontWeight.w500,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 12,
                                           ),
                                         ),
                                       );
                                     }
                                     return const Text('');
                                   },
+                                  reservedSize: 32,
                                 ),
                               ),
                               leftTitles: AxisTitles(
                                 sideTitles: SideTitles(
                                   showTitles: true,
-                                  reservedSize: 40,
-                                  interval: 25,
-                                  getTitlesWidget: (value, meta) {
-                                    return Padding(
-                                      padding: const EdgeInsets.only(right: 6.0),
-                                      child: Text(
-                                        '${value.toInt()}%',
+                                  interval: maxCount > 10 ? (maxCount / 5).ceil().toDouble() : 2,
+                                  getTitlesWidget: (double value, TitleMeta meta) {
+                                    if (value == 0) {
+                                      return Text(
+                                        '0',
                                         style: TextStyle(
-                                          fontSize: 12,
                                           color: coffeeBrown,
                                           fontWeight: FontWeight.w500,
+                                          fontSize: 11,
                                         ),
+                                      );
+                                    }
+                                    return Text(
+                                      value.toInt().toString(),
+                                      style: TextStyle(
+                                        color: coffeeBrown,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 11,
                                       ),
                                     );
                                   },
+                                  reservedSize: 32,
                                 ),
                               ),
                             ),
                             borderData: FlBorderData(
                               show: true,
                               border: Border(
-                                bottom: BorderSide(color: Colors.grey.withOpacity(0.3)),
-                                left: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                                bottom: BorderSide(
+                                  color: Colors.grey.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                                left: BorderSide(
+                                  color: Colors.grey.withOpacity(0.3),
+                                  width: 1,
+                                ),
                               ),
                             ),
-                            lineBarsData: [
-                              LineChartBarData(
-                                spots: graphData,
-                                isCurved: true,
-                                color: caramelBrown,
-                                barWidth: 3,
-                                dotData: FlDotData(
-                                  show: true,
-                                  getDotPainter: (spot, percent, barData, index) {
-                                    return FlDotCirclePainter(
-                                      radius: 4,
-                                      color: caramelBrown,
-                                      strokeWidth: 2,
-                                      strokeColor: Colors.white,
-                                    );
-                                  },
-                                ),
-                                belowBarData: BarAreaData(
-                                  show: true,
-                                  color: caramelBrown.withOpacity(0.1),
-                                ),
-                              ),
-                            ],
+                            barGroups: barData,
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: maxCount > 10 ? (maxCount / 5).ceil().toDouble() : 2,
+                              getDrawingHorizontalLine: (value) {
+                                return FlLine(
+                                  color: Colors.grey.withOpacity(0.15),
+                                  strokeWidth: 1,
+                                );
+                              },
+                            ),
                           ),
                         ),
                       ),
                       
                       // Bottom encouragement text
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Center(
                         child: Text(
-                          "Keep up the great work!",
+                          weeklyCompletedCount > 0 
+                              ? "This week’s performance? Stronger than a double espresso!🍵" 
+                              : "Ready to start achieving? 💪",
                           style: TextStyle(
                             fontSize: 14,
                             color: coffeeBrown,
