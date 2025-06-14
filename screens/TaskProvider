@@ -52,6 +52,9 @@ class TaskProvider with ChangeNotifier {
   // Expose userTasksCollection for direct StreamBuilder usage in UI
   CollectionReference? get userTasksCollection => _userTasksCollection;
 
+  // Expose userHistoryCollection for direct usage
+  CollectionReference? get userHistoryCollection => _userHistoryCollection;
+
   // 统一的马来西亚时间获取
   DateTime _getMalaysiaTime() {
     // return DateTime.now().toUtc().add(const Duration(hours: 8));
