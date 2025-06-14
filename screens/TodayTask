@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
+import 'dart:math';
 import 'package:provider/provider.dart';
 import '../screens/TaskProvider.dart';
 import '../screens/HistoryPage.dart';
@@ -39,19 +40,35 @@ class _TodayTaskState extends State<TodayTask> {
   }
 
   // 🔧 添加统一的马来西亚时间方法
+  // DateTime _getMalaysiaTime() {
+  //   return DateTime.now().toUtc().add(const Duration(hours: 8));
+  // }
+
+  // DateTime _getMalaysiaDateKey() {
+  //   final malaysiaTime = _getMalaysiaTime();
+  //   return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  // }
+
+  // 🔧 FIXED: Create date-only DateTime for today's tasks (debug)
+  // DateTime _getTodayMidnight() {
+  //   final malaysiaTime = _getMalaysiaTime();
+  //   return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+  // }
+
+
   DateTime _getMalaysiaTime() {
-    return DateTime.now().toUtc().add(const Duration(hours: 8));
+    return DateTime.now();
   }
 
   DateTime _getMalaysiaDateKey() {
-    final malaysiaTime = _getMalaysiaTime();
-    return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+    // final malaysiaTime = _getMalaysiaTime();
+    return DateTime(_getMalaysiaTime().year, _getMalaysiaTime().month, _getMalaysiaTime().day);
   }
 
   // 🔧 FIXED: Create date-only DateTime for today's tasks (debug)
   DateTime _getTodayMidnight() {
-    final malaysiaTime = _getMalaysiaTime();
-    return DateTime(malaysiaTime.year, malaysiaTime.month, malaysiaTime.day);
+    // final malaysiaTime = _getMalaysiaTime();
+    return DateTime(_getMalaysiaTime().year, _getMalaysiaTime().month, _getMalaysiaTime().day);
   }
 
   // 添加状态监控方法
@@ -124,7 +141,7 @@ class _TodayTaskState extends State<TodayTask> {
   Future<void> _toggleTaskCompletion(Task task) async {
     final taskProvider = Provider.of<TaskProvider>(context, listen: false);
     try {
-      await taskProvider.toggleTaskDone(task);
+      await taskProvider.toggleTaskDoneWithConfirmation(context, task);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -137,71 +154,111 @@ class _TodayTaskState extends State<TodayTask> {
     }
   }
 
-  void _confirmDeleteTask(Task task) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: cardBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          "Delete Task",
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: espresso,
-          ),
+void _confirmDeleteTask(Task task) {
+  showDialog(
+    context: context,
+    builder: (context) => Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 370,
+          minWidth: 370,
         ),
-        content: Text(
-          "Are you sure you want to delete this task?",
-          style: TextStyle(color: coffeeBrown),
-        ),
-        actions: [
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: coffeeBrown),
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+    child: AlertDialog(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      backgroundColor: cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.red[50],
+              borderRadius: BorderRadius.circular(8),
             ),
-            onPressed: () async {
-              try {
-                await Provider.of<TaskProvider>(
-                  context,
-                  listen: false,
-                ).removeTask(task);
-                if (mounted) Navigator.of(context).pop();
-              } catch (e) {
-                if (mounted) {
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Error deleting task: $e"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text("Delete"),
+            child: Icon(
+              Icons.delete_outline,
+              color: Colors.red[600],
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            'Delete Task',
+            style: TextStyle(
+              color: espresso,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
-    );
-  }
+      content: Text(
+        'Are you sure you want to delete this task?',
+        style: TextStyle(
+          color: coffeeBrown,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            foregroundColor: coffeeBrown,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () async {
+            try {
+              await Provider.of<TaskProvider>(
+                context,
+                listen: false,
+              ).removeTask(task);
+              if (mounted) Navigator.of(context).pop();
+            } catch (e) {
+              if (mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text("Error deleting task: $e"),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.red[600],
+            backgroundColor: Colors.red[50],
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: const Text('Delete'),
+        ),
+      ],
+    ),
+  ),
+    ),
+  );
+}
 
   // Common validation helper
   bool _validateTaskTitle() {
     if (_taskController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Task title cannot be empty."),
-          backgroundColor: Colors.red,
+        SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.white),
+            SizedBox(width: 8),
+            Expanded(child: Text("Task title cannot be empty", style: TextStyle(fontSize: 16))),
+          ],
         ),
+        backgroundColor: Colors.red[700],
+        // behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        // margin: EdgeInsets.all(16),
+        elevation: 6,
+      ),
       );
       return false;
     }
@@ -266,7 +323,12 @@ class _TodayTaskState extends State<TodayTask> {
   }) {
     return Dialog(
       backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.all(16), // Add padding to prevent overflow ***
       child: Container(
+        // Add constraints to prevent dialog from being too large ***
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8, // Limit height to 80% of screen ***
+        ),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
@@ -284,160 +346,162 @@ class _TodayTaskState extends State<TodayTask> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header with coffee bean icon
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: coffeeBrown.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.coffee,
-                      color: coffeeBrown,
-                      size: 24,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Text(
-                    saveButtonText == "Update Task" ? "Edit Task" : "New Task",
-                    style: TextStyle(
-                      color: espresso,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: 24),
-              
-              // Title field
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: coffeeShadow,
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  controller: titleController,
-                  decoration: InputDecoration(
-                    hintText: "What needs to be done?",
-                    hintStyle: TextStyle(color: Colors.grey[500]),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: EdgeInsets.all(16),
-                    prefixIcon: Icon(Icons.task_alt, color: caramelBrown),
-                  ),
-                ),
-              ),
-              
-              SizedBox(height: 16),
-              
-              // Details field
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: coffeeShadow,
-                      blurRadius: 8,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextField(
-                  controller: detailsController,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: "Add some details...",
-                    hintStyle: TextStyle(color: Colors.grey[500]),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    contentPadding: EdgeInsets.all(16),
-                    prefixIcon: Padding(
-                      padding: const EdgeInsets.only(bottom: 40),
-                      child: Icon(Icons.notes, color: caramelBrown),
-                    ),
-                  ),
-                ),
-              ),
-              
-              SizedBox(height: 28),
-              
-              // Action buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: TextButton(
-                      onPressed: _clearAndClose,
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        "Cancel",
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    flex: 2,
-                    child: Container(
+          child: SingleChildScrollView( // Wrap content in SingleChildScrollView
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header with coffee bean icon
+                Row(
+                  children: [
+                    Container(
+                      padding: EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [coffeeBrown, caramelBrown],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        color: coffeeBrown.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: coffeeBrown.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: Offset(0, 4),
-                          ),
-                        ],
                       ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
+                      child: Icon(
+                        Icons.coffee,
+                        color: coffeeBrown,
+                        size: 24,
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Text(
+                      saveButtonText == "Update Task" ? "Edit Task" : "New Task",
+                      style: TextStyle(
+                        color: espresso,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 24),
+                
+                // Title field
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: coffeeShadow,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: titleController,
+                    decoration: InputDecoration(
+                      hintText: "What's your coffee order?",
+                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: EdgeInsets.all(16),
+                      prefixIcon: Icon(Icons.emoji_food_beverage, color: caramelBrown),
+                    ),
+                  ),
+                ),
+                
+                SizedBox(height: 16),
+                
+                // Details field
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: coffeeShadow,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: detailsController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: "Add some details...",
+                      hintStyle: TextStyle(color: Colors.grey[500]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: EdgeInsets.all(16),
+                      prefixIcon: Padding(
+                        padding: const EdgeInsets.only(bottom: 40),
+                        child: Icon(Icons.receipt_long, color: caramelBrown),
+                      ),
+                    ),
+                  ),
+                ),
+                
+                SizedBox(height: 28),
+                
+                // Action buttons
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: _clearAndClose,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          "Cancel",
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                    SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [coffeeBrown, caramelBrown],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
                           borderRadius: BorderRadius.circular(12),
-                          onTap: onSave,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Center(
-                              child: Text(
-                                saveButtonText,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                          boxShadow: [
+                            BoxShadow(
+                              color: coffeeBrown.withOpacity(0.3),
+                              blurRadius: 8,
+                              offset: Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: onSave,
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16),
+                              child: Center(
+                                child: Text(
+                                  saveButtonText,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
@@ -445,10 +509,10 @@ class _TodayTaskState extends State<TodayTask> {
                         ),
                       ),
                     ),
-                  ),
-                ],
-              ),
-            ],
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -512,14 +576,14 @@ class _TodayTaskState extends State<TodayTask> {
       if (mounted) {
         Navigator.of(context).pop(); // Close loading dialog
         _clearAndClose(); // Close add task dialog
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Task added successfully!"),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        // // Show success message
+        // ScaffoldMessenger.of(context).showSnackBar(
+        //   const SnackBar(
+        //     content: Text("Task added successfully!"),
+        //     backgroundColor: Colors.green,
+        //     duration: Duration(seconds: 2),
+        //   ),
+        //);
       }
     } catch (e) {
       if (mounted) {
@@ -662,15 +726,41 @@ class _TodayTaskState extends State<TodayTask> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // IconButton(
+                    //   icon: Icon(
+                    //     Icons.edit_outlined,
+                    //     color: caramelBrown,
+                    //     size: 20,
+                    //   ),
+                    //   onPressed: () => _showEditTaskDialog(task),
+                    //   constraints: const BoxConstraints(),
+                    //   padding: const EdgeInsets.all(8),
+                    // ),
+                    // IconButton(
+                    //   icon: Icon(
+                    //     task.isDone ? Icons.check_circle : Icons.radio_button_unchecked,
+                    //     color: task.isDone ? Colors.green : coffeeBrown,
+                    //     size: 24,
+                    //   ),
+                    //   onPressed: () => Provider.of<TaskProvider>(context, listen: false).toggleTaskDoneWithConfirmation(context, task),
+                    //   constraints: const BoxConstraints(),
+                    //   padding: const EdgeInsets.all(8),
+                    // ),
+                    // IconButton(
+                    //   icon: const Icon(
+                    //     Icons.delete_outline,
+                    //     color: Colors.red,
+                    //     size: 20,
+                    //   ),
+                    //   onPressed: () => _confirmDeleteTask(task),
+                    //   constraints: const BoxConstraints(),
+                    //   padding: const EdgeInsets.all(8),
+                    // ),
                     IconButton(
-                      icon: Icon(
-                        Icons.edit_outlined,
-                        color: caramelBrown,
-                        size: 20,
-                      ),
+                      icon: Icon(Icons.edit_outlined, size: 20),
                       onPressed: () => _showEditTaskDialog(task),
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.all(8),
+                      color: caramelBrown,
+                      tooltip: "Edit",
                     ),
                     IconButton(
                       icon: Icon(
@@ -678,19 +768,15 @@ class _TodayTaskState extends State<TodayTask> {
                         color: task.isDone ? Colors.green : coffeeBrown,
                         size: 24,
                       ),
-                      onPressed: () => _toggleTaskCompletion(task),
+                      onPressed: () => Provider.of<TaskProvider>(context, listen: false).toggleTaskDoneWithConfirmation(context, task),
                       constraints: const BoxConstraints(),
                       padding: const EdgeInsets.all(8),
                     ),
                     IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: Colors.red,
-                        size: 20,
-                      ),
+                      icon: Icon(Icons.delete_outline, size: 20),
                       onPressed: () => _confirmDeleteTask(task),
-                      constraints: const BoxConstraints(),
-                      padding: const EdgeInsets.all(8),
+                      color: Colors.red[700],
+                      tooltip: "Delete",
                     ),
                   ],
                 ),
@@ -846,22 +932,63 @@ class _TodayTaskState extends State<TodayTask> {
           ),
         ),
         actions: [
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(6),
+          Stack(
+            children: [
+              IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.history, size: 20),
+                ),
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => HistoryPage()),
+                ),
+                tooltip: "View History",
               ),
-              child: const Icon(Icons.history, size: 20),
-            ),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => HistoryPage()),
-            ),
-            tooltip: "View History",
+              // Notification badge
+              Consumer<TaskProvider>(
+                builder: (context, taskProvider, child) {
+                  return FutureBuilder<int>(
+                    future: taskProvider.getNonDeletedHistoryTasksCount(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data == 0) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      return Positioned(
+                        right: 0,
+                        top: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 20,
+                            minHeight: 20,
+                          ),
+                          child: Text(
+                            snapshot.data! > 99 ? '99+' : snapshot.data!.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
         ],
       ),
       drawer: const AppDrawer(),
@@ -905,6 +1032,8 @@ class _TodayTaskState extends State<TodayTask> {
                 ),
               ),
 
+
+// pattern: https://claude.ai/chat/357b05fc-316d-4949-92b7-d47d0711262d
               const SizedBox(height: 16),
 
               // Debug Info (conditionally shown)
@@ -982,4 +1111,47 @@ class _TodayTaskState extends State<TodayTask> {
       ),
     );
   }
+}
+
+// Link for history notification: https://claude.ai/chat/4e90f8c9-11de-4c98-a94e-1c327124d84e
+class CoffeeBeanPainter extends CustomPainter {
+  final Color beanColor;
+  
+  CoffeeBeanPainter({required this.beanColor});
+  
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = beanColor.withOpacity(0.1)
+      ..style = PaintingStyle.fill;
+    
+    // Draw coffee beans scattered across the card
+    for (int i = 0; i < 8; i++) {
+      for (int j = 0; j < 4; j++) {
+        final x = (i * size.width / 8) + (j % 2 == 0 ? 0 : size.width / 16);
+        final y = (j * size.height / 4) + 10;
+        
+        // Draw coffee bean shape (oval with center line)
+        final beanRect = Rect.fromCenter(
+          center: Offset(x, y),
+          width: 12,
+          height: 8,
+        );
+        canvas.drawOval(beanRect, paint);
+        
+        // Draw center line of coffee bean
+        final linePaint = Paint()
+          ..color = beanColor.withOpacity(0.15)
+          ..strokeWidth = 1;
+        canvas.drawLine(
+          Offset(x - 4, y),
+          Offset(x + 4, y),
+          linePaint,
+        );
+      }
+    }
+  }
+  
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
