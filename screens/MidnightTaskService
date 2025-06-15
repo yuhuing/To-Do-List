@@ -317,4 +317,4 @@ class _AppLifecycleObserver extends WidgetsBindingObserver {
   }
 }
 
-// for UI deletion: https://claude.ai/chat/33fb74a4-989d-427b-a176-44db20f3aa7f 
+// for UI deletion: https://claude.ai/chat/33fb74a4-989d-427b-a176-44db20f3aa7f ...
