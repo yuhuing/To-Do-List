@@ -3,14 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../widgets/AppDrawer.dart';
 
-void main() {
-  runApp(
-    MaterialApp(
-      home: GroupCollaborationPage(),
-      debugShowCheckedModeBanner: false,
-    ),
-  );
-}
 
 // Color constants matching the pattern
 class AppColors {
