@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "238182649434",
+    "firebase_url": "https://cafechecklist3-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "cafechecklist3",
+    "storage_bucket": "cafechecklist3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:238182649434:android:55a39052cfff95be7bd263",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDc99e5l1hSARV57qNfJcYGcaRHZBp3Obs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
