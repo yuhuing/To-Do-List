@@ -1,0 +1,6 @@
+import 'TaskModel.dart';
+
+class GlobalState {
+  static String username = '';
+  static List<Task> todayTasks = [];
+}

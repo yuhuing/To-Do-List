@@ -1,0 +1,616 @@
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'AppDrawer.dart';
+
+void main() {
+  runApp(const MaterialApp(
+    home: LongTermTask(),
+    debugShowCheckedModeBanner: false,
+  ));
+}
+
+enum Priority {high, medium, low,}
+
+class Task {
+  String title;
+  String details;
+  DateTime? dueDate;
+  bool isDone;
+  Priority priority;
+
+  Task({
+    required this.title,
+    this.details = '',
+    this.dueDate,
+    this.isDone = false,
+    this.priority = Priority.high,
+  });
+}
+
+class LongTermTask extends StatefulWidget {
+  const LongTermTask({super.key});
+
+  @override
+  State<LongTermTask> createState() => _LongTermTaskState();
+}
+
+class _LongTermTaskState extends State<LongTermTask> {
+  List<Task> tasks = [];
+  final TextEditingController _titleController = TextEditingController();
+  final TextEditingController _detailsController = TextEditingController();
+  DateTime? _selectedDate = DateTime.now().add(Duration(days: 1));
+  Priority? _selectedPriority;
+
+  void _addTask() {
+    if (_titleController.text.trim().isEmpty) {
+      // Show error if title is empty
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Task title cannot be empty."),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+      return;
+    }
+
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+
+  // Initialize with default values (will be adjusted based on logic)
+  DateTime finalDate = _selectedDate ?? today.add(const Duration(days: 1));
+  Priority finalPriority = _selectedPriority ?? Priority.high;
+
+  // Case 1: No date selected, no priority selected → use tomorrow + high priority
+  if (_selectedDate == null && _selectedPriority == null) {
+    finalDate = today.add(const Duration(days: 1));
+    finalPriority = Priority.high;
+  }
+
+  // Case 2: No date selected, but priority selected → use tomorrow with selected priority
+  else if (_selectedDate == null && _selectedPriority != null) {
+    finalDate = today.add(const Duration(days: 1));
+    finalPriority = _selectedPriority!;
+  }
+
+  // Case 3: Date selected, but no priority → assign priority based on days difference
+  else if (_selectedDate != null && _selectedPriority == null) {
+    finalDate = _selectedDate!;
+    final daysDiff = finalDate.difference(today).inDays;
+
+    if (daysDiff <= 3) {
+      finalPriority = Priority.high;
+    } else if (daysDiff <= 7) {
+      finalPriority = Priority.medium;
+    } else {
+      finalPriority = Priority.low;
+    }
+  }
+
+  // Case 4: Both date and priority selected → use directly
+
+  setState(() {
+    tasks.add(Task(
+      title: _titleController.text.trim(),
+      details: _detailsController.text.trim(),
+      dueDate: finalDate,
+      priority: finalPriority,
+    ));
+  });
+
+  // Clear input fields and reset state
+  _titleController.clear();
+  _detailsController.clear();
+  _selectedDate = null;
+  _selectedPriority = null;
+  // isExpanded = false;
+}
+
+
+
+  void _toggleDone(Task task) {
+    setState(() {
+      task.isDone = !task.isDone;
+    });
+  }
+
+  List<Task> _tasksByPriority(Priority priority) {
+    return tasks
+        .where((task) => task.priority == priority)
+        .toList()
+      ..sort((a, b) => (a.dueDate ?? DateTime.now())
+          .compareTo(b.dueDate ?? DateTime.now()));
+  }
+
+  Widget _buildTaskCard(Task task) {
+    return Card(
+      color: const Color(0xFFF3E5AB),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+      child: ListTile(
+        title: Text(task.title,
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                decoration:
+                    task.isDone ? TextDecoration.lineThrough : null)),
+        subtitle: Text(
+            '${task.details}\nDue: ${DateFormat('dd/MM/yyyy').format(task.dueDate!)}'),
+        trailing: Checkbox(
+          value: task.isDone,
+          activeColor: Colors.green,
+          onChanged: (_) => _toggleDone(task),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildZone(String title, Color color, Priority priority) {
+    final taskList = _tasksByPriority(priority);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.3),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
+              color: Colors.brown
+              )
+            ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: taskList.isEmpty
+                ? const Center(child: Text("No tasks", style: TextStyle(color: Colors.grey)))
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    children: taskList.map(_buildTaskCard).toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? now.add(Duration(days: 1)),
+      firstDate: now,
+      lastDate: DateTime(now.year + 5),
+    );
+
+    if (picked != null) {
+    final today = DateTime(now.year, now.month, now.day);
+    final daysDiff = picked.difference(today).inDays;
+
+    setState(() {
+      _selectedDate = picked;
+      if (_selectedPriority == null) {
+        if (daysDiff <= 3) {
+          _selectedPriority = Priority.high;
+        } else if (daysDiff <= 7) {
+          _selectedPriority = Priority.medium;
+        } else {
+          _selectedPriority = Priority.low;
+        }
+      }
+    });
+  }
+}
+
+void _showAddTaskDialog() {
+  final TextEditingController titleController = TextEditingController();
+  final TextEditingController detailsController = TextEditingController();
+  DateTime? selectedDate = DateTime.now().add(const Duration(days: 1));
+  Priority? selectedPriority;
+
+  showDialog<Task>(
+    context: context,
+    builder: (context) {
+      return Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              void pickDate() async {
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate ?? now.add(const Duration(days: 1)),
+                  firstDate: now,
+                  lastDate: DateTime(now.year + 5),
+                );
+                if (picked != null) {
+                  final today = DateTime(now.year, now.month, now.day);
+                  final daysDiff = picked.difference(today).inDays;
+
+                  setState(() {
+                    selectedDate = picked;
+                    if (selectedPriority == null) {
+                      if (daysDiff <= 3) selectedPriority = Priority.high;
+                      else if (daysDiff <= 7) selectedPriority = Priority.medium;
+                      else selectedPriority = Priority.low;
+                    }
+                  });
+                }
+              }
+
+              void saveTask() {
+                if (titleController.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Task title cannot be empty."),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
+                final now = DateTime.now();
+                final today = DateTime(now.year, now.month, now.day);
+
+                DateTime finalDate = selectedDate ?? today.add(const Duration(days: 1));
+                Priority finalPriority = selectedPriority ?? Priority.high;
+
+                if (selectedDate == null && selectedPriority == null) {
+                  finalDate = today.add(const Duration(days: 1));
+                  finalPriority = Priority.high;
+                } else if (selectedDate == null && selectedPriority != null) {
+                  finalDate = today.add(const Duration(days: 1));
+                  finalPriority = selectedPriority!;
+                } else if (selectedDate != null && selectedPriority == null) {
+                  finalDate = selectedDate!;
+                  final daysDiff = finalDate.difference(today).inDays;
+
+                  if (daysDiff <= 3) finalPriority = Priority.high;
+                  else if (daysDiff <= 7) finalPriority = Priority.medium;
+                  else finalPriority = Priority.low;
+                }
+
+                final newTask = Task(
+                  title: titleController.text.trim(),
+                  details: detailsController.text.trim(),
+                  dueDate: finalDate,
+                  priority: finalPriority,
+                );
+
+                Navigator.of(context).pop(newTask);
+              }
+
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(hintText: "Task Title"),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: detailsController,
+                      maxLines: 2,
+                      decoration: const InputDecoration(hintText: "Details"),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: pickDate,
+                          icon: const Icon(Icons.calendar_today),
+                          label: Text(selectedDate != null
+                              ? DateFormat('dd/MM/yyyy').format(selectedDate!)
+                              : "Select Date"),
+                          style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+                        ),
+                        DropdownButton<Priority>(
+                          value: selectedPriority,
+                          hint: const Text("Priority"),
+                          items: Priority.values.map((p) {
+                            return DropdownMenuItem(
+                              value: p,
+                              child: Text(p.name.toUpperCase()),
+                            );
+                          }).toList(),
+                          onChanged: (p) => setState(() => selectedPriority = p),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.check_circle, color: Colors.green, size: 30),
+                          onPressed: saveTask,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    },
+  ).then((newTask) {
+    if (newTask != null) {
+      setState(() {
+        tasks.add(newTask);
+      });
+    }
+  });
+}
+
+
+// void _showAddTaskSheet() {
+//   showModalBottomSheet<Task>(
+//     context: context,
+//     isScrollControlled: true,
+//     shape: const RoundedRectangleBorder(
+//       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+//     ),
+//     builder: (context) {
+//       final TextEditingController titleController = TextEditingController();
+//       final TextEditingController detailsController = TextEditingController();
+//       DateTime? selectedDate = DateTime.now().add(const Duration(days: 1));
+//       Priority? selectedPriority;
+
+//       return Padding(
+//         padding: EdgeInsets.only(
+//           bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+//           left: 20,
+//           right: 20,
+//           top: 20,
+//         ),
+//         child: StatefulBuilder(
+//           builder: (context, setModalState) {
+//             void pickDate() async {
+//               final now = DateTime.now();
+//               final picked = await showDatePicker(
+//                 context: context,
+//                 initialDate: selectedDate ?? now.add(const Duration(days: 1)),
+//                 firstDate: now,
+//                 lastDate: DateTime(now.year + 5),
+//               );
+//               if (picked != null) {
+//                 final today = DateTime(now.year, now.month, now.day);
+//                 final daysDiff = picked.difference(today).inDays;
+
+//                 setModalState(() {
+//                   selectedDate = picked;
+//                   if (selectedPriority == null) {
+//                     if (daysDiff <= 3) selectedPriority = Priority.high;
+//                     else if (daysDiff <= 7) selectedPriority = Priority.medium;
+//                     else selectedPriority = Priority.low;
+//                   }
+//                 });
+//               }
+//             }
+
+//             void saveTask() {
+//               if (titleController.text.trim().isEmpty) {
+//                 ScaffoldMessenger.of(context).showSnackBar(
+//                   const SnackBar(
+//                     content: Text("Task title cannot be empty."),
+//                     backgroundColor: Colors.redAccent,
+//                   ),
+//                 );
+//                 return;
+//               }
+
+//               final now = DateTime.now();
+//               final today = DateTime(now.year, now.month, now.day);
+
+//               DateTime finalDate = selectedDate ?? today.add(const Duration(days: 1));
+//               Priority finalPriority = selectedPriority ?? Priority.high;
+
+//               if (selectedDate == null && selectedPriority == null) {
+//                 finalDate = today.add(const Duration(days: 1));
+//                 finalPriority = Priority.high;
+//               } else if (selectedDate == null && selectedPriority != null) {
+//                 finalDate = today.add(const Duration(days: 1));
+//                 finalPriority = selectedPriority!;
+//               } else if (selectedDate != null && selectedPriority == null) {
+//                 finalDate = selectedDate!;
+//                 final daysDiff = finalDate.difference(today).inDays;
+
+//                 if (daysDiff <= 3) finalPriority = Priority.high;
+//                 else if (daysDiff <= 7) finalPriority = Priority.medium;
+//                 else finalPriority = Priority.low;
+//               }
+
+//               final newTask = Task(
+//                 title: titleController.text.trim(),
+//                 details: detailsController.text.trim(),
+//                 dueDate: finalDate,
+//                 priority: finalPriority,
+//               );
+
+//               Navigator.of(context).pop(newTask);
+//             }
+
+//             return Column(
+//               mainAxisSize: MainAxisSize.min,
+//               children: [
+//                 TextField(
+//                   controller: titleController,
+//                   decoration: const InputDecoration(hintText: "Task Title"),
+//                 ),
+//                 const SizedBox(height: 10),
+//                 TextField(
+//                   controller: detailsController,
+//                   maxLines: 2,
+//                   decoration: const InputDecoration(hintText: "Details"),
+//                 ),
+//                 const SizedBox(height: 10),
+//                 Row(
+//                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                   children: [
+//                     ElevatedButton.icon(
+//                       onPressed: pickDate,
+//                       icon: const Icon(Icons.calendar_today),
+//                       label: Text(selectedDate != null
+//                           ? DateFormat('dd/MM/yyyy').format(selectedDate!)
+//                           : "Select Date"),
+//                       style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+//                     ),
+//                     DropdownButton<Priority>(
+//                       value: selectedPriority,
+//                       hint: const Text("Priority"),
+//                       items: Priority.values.map((p) {
+//                         return DropdownMenuItem(
+//                           value: p,
+//                           child: Text(p.name.toUpperCase()),
+//                         );
+//                       }).toList(),
+//                       onChanged: (p) => setModalState(() => selectedPriority = p),
+//                     ),
+//                     IconButton(
+//                       icon: const Icon(Icons.check_circle, color: Colors.green, size: 30),
+//                       onPressed: saveTask,
+//                     ),
+//                   ],
+//                 ),
+//                 const SizedBox(height: 10),
+//               ],
+//             );
+//           },
+//         ),
+//       );
+//     },
+//   ).then((newTask) {
+//     if (newTask != null) {
+//       setState(() {
+//         tasks.add(newTask);
+//       });
+//     }
+//   });
+// }
+
+
+  // Widget _buildInputSection() {
+  //   if (!isExpanded) return const SizedBox();
+
+  //   return Padding(
+  //     padding: const EdgeInsets.all(16),
+  //     child: Container(
+  //       padding: const EdgeInsets.all(12),
+  //       decoration: BoxDecoration(
+  //         color: const Color(0xFFFFF3D9),
+  //         borderRadius: BorderRadius.circular(20),
+  //         boxShadow: [
+  //           BoxShadow(
+  //             color: Colors.brown.withOpacity(0.2),
+  //             blurRadius: 8,
+  //             offset: const Offset(0, 4),
+  //           ),
+  //         ],
+  //       ),
+  //       child: Column(
+  //         children: [
+  //           TextField(
+  //             controller: _titleController,
+  //             decoration: const InputDecoration(
+  //               hintText: "Input new task here",
+  //             ),
+  //           ),
+  //           const SizedBox(height: 10),
+  //           TextField(
+  //             controller: _detailsController,
+  //             maxLines: 2,
+  //             decoration: const InputDecoration(hintText: "Details"),
+  //           ),
+  //           const SizedBox(height: 10),
+  //           Row(
+  //             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+  //             children: [
+  //               ElevatedButton.icon(
+  //                 onPressed: _pickDate,
+  //                 icon: const Icon(Icons.calendar_today),
+  //                 label: Text(_selectedDate != null
+  //                     ? DateFormat('dd/MM/yyyy').format(_selectedDate!)
+  //                     : "Calendar"),
+  //                 style: ElevatedButton.styleFrom(backgroundColor: Colors.brown),
+  //               ),
+                
+  //               DropdownButton<Priority>(
+  //                 value: _selectedPriority,
+  //                 items: Priority.values.map((p) {
+  //                   return DropdownMenuItem(
+  //                     value: p,
+  //                     child: Text(p.name.toUpperCase()),
+  //                   );
+  //                 }).toList(),
+  //                 onChanged: (p) => setState(() => _selectedPriority = p!),
+  //               ),
+
+  //               IconButton(
+  //                 icon: const Icon(Icons.check_circle, color: Colors.green, size: 30),
+  //                 onPressed: _addTask,
+  //               )
+  //             ],
+  //           )
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
+
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        title: const Text("Long-Term Task"),
+        backgroundColor: const Color(0xFF6F4E37),
+        foregroundColor: Colors.white,
+        centerTitle: true,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            color: Colors.brown,
+            iconSize: 36,
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          children: [
+            Expanded(
+              flex: 3, // 占总高度的 3 份
+              child: _buildZone("Red Zone", Colors.red, Priority.high),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              flex: 3,
+              child: _buildZone("Yellow Zone", Colors.yellow, Priority.medium),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              flex: 3,
+              child: _buildZone("Green Zone", Colors.green, Priority.low),
+            ),
+            // if (isExpanded) _buildInputSection(),
+            // const SizedBox(height: 80), // 给 FloatingActionButton 留空间
+          ],
+        ),
+      ),
+
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.brown,
+        onPressed: _showAddTaskDialog,
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+// 问题：一开始没自动出 high
+
