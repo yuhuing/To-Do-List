@@ -18,7 +18,7 @@ class AuthService {
       return cred.user;
     } on FirebaseAuthException catch (e) {
       log('Firebase Error: ${e.message}', name: 'MyApp', error: e);
-      rethrow; // <--- 关键：把 Firebase 错误继续抛回去让 UI 处理
+      rethrow; 
     } catch (e) {
       log(
         'Something went wrong: $e',
